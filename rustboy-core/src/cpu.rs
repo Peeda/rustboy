@@ -1,13 +1,4 @@
-use bitflags::bitflags;
-bitflags! {
-    pub struct Flags: u8 {
-        const Z = 1 << 7;
-        const N = 1 << 6;
-        const H = 1 << 5;
-        const C = 1 << 4;
-    }
-}
-
+//clock cycles taken for instructions
 pub const CLOCK: [u8; 256] = [
      4, 12,  8,  8,  4,  4,  8,  4, 20,  8,  8,  8,  4,  4,  8,  4,
      4, 12,  8,  8,  4,  4,  8,  4, 12,  8,  8,  8,  4,  4,  8,  4,
@@ -58,7 +49,7 @@ impl Default for CPU {
 #[allow(non_snake_case)]
 struct Registers {
     A: u8,
-    F: Flags,
+    F: u8,
     B: u8,
     C: u8,
     D: u8,
@@ -68,11 +59,36 @@ struct Registers {
     SP: u16,
     PC: u16,
 }
+macro_rules! read_16 {
+    ($name:ident, $high:ident, $low:ident) => {
+        fn $name(&self) -> u16 {
+            (self.$high as u16) << 8 | self.$low as u16
+        }
+    }
+}
+macro_rules! write_16 {
+    ($name:ident, $high:ident, $low:ident) => {
+        fn $name(&mut self, val: u16) {
+            self.$high = (val >> 8) as u8;
+            self.$low = (val & 0xFF) as u8;
+        }
+    }
+}
+impl Registers {
+    read_16!(read_af, A, F);
+    read_16!(read_bc, B, C);
+    read_16!(read_de, D, E);
+    read_16!(read_hl, H, L);
+    write_16!(write_af, A, F);
+    write_16!(write_bc, B, C);
+    write_16!(write_de, D, E);
+    write_16!(write_hl, H, L);
+}
 impl Default for Registers {
     fn default() -> Self {
         Registers {
             A: 0x01,
-            F: Flags::C | Flags::H | Flags::Z,
+            F: 0xB0,
             B: 0x00,
             C: 0x13,
             D: 0x00,
