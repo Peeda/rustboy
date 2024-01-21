@@ -1,4 +1,4 @@
-//clock cycles taken for instructions
+//clock cycles taken for instructions, uses lower value for variable length opcodes
 pub const CLOCK: [u8; 256] = [
      4, 12,  8,  8,  4,  4,  8,  4, 20,  8,  8,  8,  4,  4,  8,  4,
      4, 12,  8,  8,  4,  4,  8,  4, 12,  8,  8,  8,  4,  4,  8,  4,
@@ -35,13 +35,30 @@ pub const CB_CLOCK: [u8; 256] = [
     8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8,
     8, 8, 8, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 8, 16, 8,
 ];
+#[allow(non_snake_case)]
 pub struct CPU {
     regs:Registers,
+    SP: u16,
+    PC: u16,
+}
+impl CPU {
+    pub fn execute(&mut self, opcode: u8) -> u8 {
+        //get octal digits to index rows and columns of octal opcode table
+        let (a,b,c) = ((opcode >> 6),(opcode & 0b111000) >> 3,opcode & 0b111);
+        let row = a * 10 + b;
+        let column = c;
+        assert!(row <= 37 && column <= 7, "Couldn't get correct row and column 
+        values for opcode {:#04X}", opcode);
+        //TODO: make sure to handle variable length codes
+        CLOCK[opcode as usize]
+    }
 }
 impl Default for CPU {
     fn default() -> Self {
         CPU {
             regs:Registers::default(),
+            SP: 0xFFFE,
+            PC: 0x0100,
         }
     }
 }
@@ -56,8 +73,6 @@ struct Registers {
     E: u8,
     H: u8,
     L: u8,
-    SP: u16,
-    PC: u16,
 }
 macro_rules! read_16 {
     ($name:ident, $high:ident, $low:ident) => {
@@ -95,8 +110,6 @@ impl Default for Registers {
             E: 0xD8,
             H: 0x01,
             L: 0x4D,
-            SP: 0xFFFE,
-            PC: 0x0100,
         }
     }
 }
