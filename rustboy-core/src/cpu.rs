@@ -43,14 +43,50 @@ pub struct CPU {
 }
 impl CPU {
     pub fn execute(&mut self, opcode: u8) -> u8 {
-        //get octal digits to index rows and columns of octal opcode table
-        let (a,b,c) = ((opcode >> 6),(opcode & 0b111000) >> 3,opcode & 0b111);
-        let row = a * 10 + b;
-        let column = c;
-        assert!(row <= 37 && column <= 7, "Couldn't get correct row and column 
-        values for opcode {:#04X}", opcode);
+        //B C D E H L HL A
+        match opcode {
+            0x00 => {},
+            0x40..=0x7F => {
+                //[64,127]
+                let left = (opcode - 0x40) / 8;
+                let right = (opcode - 0x40) % 8;
+                let data = match right {
+                    0 => self.regs.B,
+                    1 => self.regs.C,
+                    2 => self.regs.D,
+                    3 => self.regs.E,
+                    4 => self.regs.H,
+                    5 => self.regs.L,
+                    6 => self.read_mem(self.regs.read_hl()),
+                    7 => self.regs.A,
+                    _ => unreachable!()
+                };
+                match left {
+                    0 => {self.regs.B = data},
+                    1 => {self.regs.C = data},
+                    2 => {self.regs.D = data},
+                    3 => {self.regs.E = data},
+                    4 => {self.regs.H = data},
+                    5 => {self.regs.L = data},
+                    6 => {
+                        if right != 6 {
+                            self.write_mem(self.regs.read_hl(), data);
+                        }
+                    },
+                    7 => {self.regs.A = data},
+                    _ => unreachable!()
+                }
+            }
+            _ => todo!()
+        }
         //TODO: make sure to handle variable length codes
         CLOCK[opcode as usize]
+    }
+    fn read_mem(&self, addr:u16) -> u8 {
+        todo!()
+    }
+    fn write_mem(&self, addr:u16, data:u8) {
+        todo!()
     }
 }
 impl Default for CPU {
