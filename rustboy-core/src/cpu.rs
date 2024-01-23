@@ -1,3 +1,5 @@
+use core::panicking::panic;
+
 //clock cycles taken for instructions, uses lower value for variable length opcodes
 pub const CLOCK: [u8; 256] = [
      4, 12,  8,  8,  4,  4,  8,  4, 20,  8,  8,  8,  4,  4,  8,  4,
@@ -42,7 +44,54 @@ pub struct CPU {
     PC: u16,
 }
 impl CPU {
+    fn read_from_ind(&self, ind:u8) -> u8 {
+        match ind {
+            0 => self.regs.B,
+            1 => self.regs.C,
+            2 => self.regs.D,
+            3 => self.regs.E,
+            4 => self.regs.H,
+            5 => self.regs.L,
+            6 => self.read_mem(self.regs.read_hl()),
+            7 => self.regs.A,
+            _ => panic!("Invalid index")
+        }
+    }
+    fn write_from_ind(&mut self, ind:u8, data:u8) {
+        match ind {
+            0 => self.regs.B = data,
+            1 => self.regs.C = data,
+            2 => self.regs.D = data,
+            3 => self.regs.E = data,
+            4 => self.regs.H = data,
+            5 => self.regs.L = data,
+            6 => self.write_mem(self.regs.read_hl(), data),
+            7 => self.regs.A = data,
+            _ => panic!("Invalid index"),
+        }
+    }
     pub fn execute(&mut self, opcode: u8) -> u8 {
+        let bit_one = opcode & 1 << 7 > 0;
+        let bit_two = opcode & 1 << 6 > 0;
+        match (bit_one, bit_two) {
+            (false, false) => {
+
+            }
+            (false, true) => {
+                //LD 
+                let left = (opcode & 0b00111000) >> 3;
+                let right = opcode & 0b00000111;
+                if !(left == 7 && right == 7) {
+                    self.write_from_ind(left, self.read_from_ind(right));
+                }
+            }
+            (true, false) => {
+
+            }
+            (true, true) => {
+
+            }
+        }
         //B C D E H L HL A
         match opcode {
             0x00 => {},
@@ -50,31 +99,9 @@ impl CPU {
                 //[64,127]
                 let left = (opcode - 0x40) / 8;
                 let right = (opcode - 0x40) % 8;
-                let data = match right {
-                    0 => self.regs.B,
-                    1 => self.regs.C,
-                    2 => self.regs.D,
-                    3 => self.regs.E,
-                    4 => self.regs.H,
-                    5 => self.regs.L,
-                    6 => self.read_mem(self.regs.read_hl()),
-                    7 => self.regs.A,
-                    _ => unreachable!()
-                };
-                match left {
-                    0 => {self.regs.B = data},
-                    1 => {self.regs.C = data},
-                    2 => {self.regs.D = data},
-                    3 => {self.regs.E = data},
-                    4 => {self.regs.H = data},
-                    5 => {self.regs.L = data},
-                    6 => {
-                        if right != 6 {
-                            self.write_mem(self.regs.read_hl(), data);
-                        }
-                    },
-                    7 => {self.regs.A = data},
-                    _ => unreachable!()
+                let data = self.read_from_ind(right);
+                if !(left == 8 && right == 8) {
+                    self.write_from_ind(left, data);
                 }
             }
             _ => todo!()
