@@ -1,7 +1,6 @@
 use bitflags::bitflags;
 bitflags! {
-    #[allow(non_camel_case_types)]
-    struct GB_Flags: u8 {
+    struct GbFlags: u8 {
         const Z = 1 << 7;
         const N = 1 << 6;
         const H = 1 << 5;
@@ -80,32 +79,33 @@ impl CPU {
         }
     }
     pub fn execute(&mut self, opcode: u8) -> u8 {
-        let bit_one = opcode & 1 << 7 > 0;
-        let bit_two = opcode & 1 << 6 > 0;
-        match (bit_one, bit_two) {
-            (false, false) => {
+        //bits 6 and 7
+        let x = (opcode & 0b11000000) >> 6;
+        //bits 3,4,5
+        let y = (opcode & 0b00111000) >> 3;
+        //bits 0,1,2
+        let z = opcode & 0b00000111;
+        //bits 4,5
+        let p = y >> 1;
+        //bits 3
+        let q = y % 2;
+        match x {
+            0 => {
 
             }
-            (false, true) => {
+            1 => {
+
+            }
+            2 => {
                 //8 bit LD from register
-                let left = (opcode & 0b00111000) >> 3;
-                let right = opcode & 0b00000111;
-                if !(left == 7 && right == 7) {
-                    self.write_from_ind(left, self.read_from_ind(right));
+                if !(y == 7 && z == 7) {
+                    self.write_from_ind(y, self.read_from_ind(z));
                 }
             }
-            (true, false) => {
-                let id_bits = (opcode & 0b00111000) >> 3;
-                match id_bits {
-                    0 => {
-
-                    }
-                    _ => unreachable!()
-                }
-            }
-            (true, true) => {
+            3 => {
 
             }
+            _ => unreachable!()
         }
         //TODO: make sure to handle variable length codes
         CLOCK[opcode as usize]
@@ -130,7 +130,7 @@ impl Default for CPU {
 #[allow(non_snake_case)]
 struct Registers {
     A: u8,
-    F: GB_Flags,
+    F: GbFlags,
     B: u8,
     C: u8,
     D: u8,
@@ -159,7 +159,7 @@ impl Registers {
     }
     fn write_af(&mut self, val: u16) {
         self.A = (val >> 8) as u8;
-        self.F = GB_Flags::from_bits_retain((val & 0xFF) as u8);
+        self.F = GbFlags::from_bits_retain((val & 0xFF) as u8);
     }
     read_16!(read_bc, B, C);
     read_16!(read_de, D, E);
@@ -172,7 +172,7 @@ impl Default for Registers {
     fn default() -> Self {
         Registers {
             A: 0x01,
-            F: GB_Flags::from_bits_retain(0xB0),
+            F: GbFlags::from_bits_retain(0xB0),
             B: 0x00,
             C: 0x13,
             D: 0x00,
