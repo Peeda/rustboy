@@ -1,5 +1,14 @@
-use core::panicking::panic;
-
+use bitflags::bitflags;
+bitflags! {
+    #[allow(non_camel_case_types)]
+    struct GB_Flags: u8 {
+        const Z = 1 << 7;
+        const N = 1 << 6;
+        const H = 1 << 5;
+        const C = 1 << 4;
+        const _ = !0;
+    }
+}
 //clock cycles taken for instructions, uses lower value for variable length opcodes
 pub const CLOCK: [u8; 256] = [
      4, 12,  8,  8,  4,  4,  8,  4, 20,  8,  8,  8,  4,  4,  8,  4,
@@ -78,7 +87,7 @@ impl CPU {
 
             }
             (false, true) => {
-                //LD 
+                //8 bit LD from register
                 let left = (opcode & 0b00111000) >> 3;
                 let right = opcode & 0b00000111;
                 if !(left == 7 && right == 7) {
@@ -86,25 +95,17 @@ impl CPU {
                 }
             }
             (true, false) => {
+                let id_bits = (opcode & 0b00111000) >> 3;
+                match id_bits {
+                    0 => {
 
+                    }
+                    _ => unreachable!()
+                }
             }
             (true, true) => {
 
             }
-        }
-        //B C D E H L HL A
-        match opcode {
-            0x00 => {},
-            0x40..=0x7F => {
-                //[64,127]
-                let left = (opcode - 0x40) / 8;
-                let right = (opcode - 0x40) % 8;
-                let data = self.read_from_ind(right);
-                if !(left == 8 && right == 8) {
-                    self.write_from_ind(left, data);
-                }
-            }
-            _ => todo!()
         }
         //TODO: make sure to handle variable length codes
         CLOCK[opcode as usize]
@@ -129,7 +130,7 @@ impl Default for CPU {
 #[allow(non_snake_case)]
 struct Registers {
     A: u8,
-    F: u8,
+    F: GB_Flags,
     B: u8,
     C: u8,
     D: u8,
@@ -153,11 +154,16 @@ macro_rules! write_16 {
     }
 }
 impl Registers {
-    read_16!(read_af, A, F);
+    fn read_af(&self) -> u16 {
+        (self.A as u16) << 8 | self.F.bits() as u16
+    }
+    fn write_af(&mut self, val: u16) {
+        self.A = (val >> 8) as u8;
+        self.F = GB_Flags::from_bits_retain((val & 0xFF) as u8);
+    }
     read_16!(read_bc, B, C);
     read_16!(read_de, D, E);
     read_16!(read_hl, H, L);
-    write_16!(write_af, A, F);
     write_16!(write_bc, B, C);
     write_16!(write_de, D, E);
     write_16!(write_hl, H, L);
@@ -166,7 +172,7 @@ impl Default for Registers {
     fn default() -> Self {
         Registers {
             A: 0x01,
-            F: 0xB0,
+            F: GB_Flags::from_bits_retain(0xB0),
             B: 0x00,
             C: 0x13,
             D: 0x00,
