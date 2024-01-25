@@ -1,4 +1,4 @@
-use bitflags::bitflags;
+use bitflags::{bitflags, Flags};
 bitflags! {
     struct GbFlags: u8 {
         const Z = 1 << 7;
@@ -87,11 +87,90 @@ impl CPU {
         let z = opcode & 0b00000111;
         //bits 4,5
         let p = y >> 1;
-        //bits 3
+        //bit 3
         let q = y % 2;
         match x {
             0 => {
-
+                match y {
+                    0 => {
+                        let val = self.read_from_ind(z);
+                        self.regs.F -= GbFlags::N;
+                        if self.regs.A as u16 + val as u16 > u8::MAX.into() {
+                            self.regs.F |= GbFlags::C;
+                        }
+                        if (self.regs.A & 0x0F) + (val & 0x0F) > 0x0F {
+                            self.regs.F |= GbFlags::H;
+                        }
+                        self.regs.A = self.regs.A.wrapping_add(val);
+                        if self.regs.A == 0 { self.regs.F |= GbFlags::Z }
+                    }
+                    1 => {
+                        let val = self.read_from_ind(z);
+                        let carry = if self.regs.F.intersects(GbFlags::C) {1} else {0};
+                        self.regs.F -= GbFlags::N;
+                        if self.regs.A as u16 + val as u16 + carry > u8::MAX.into() {
+                            self.regs.F |= GbFlags::C;
+                        }
+                        if (self.regs.A & 0x0F) + (val & 0x0F) + carry as u8 > 0x0F {
+                            self.regs.F |= GbFlags::H;
+                        }
+                        self.regs.A = self.regs.A.wrapping_add(val).wrapping_add(carry as u8);
+                        if self.regs.A == 0 { self.regs.F |= GbFlags::Z }
+                    }
+                    2 => {
+                        let val = self.read_from_ind(z);
+                        self.regs.F |= GbFlags::N;
+                        if self.regs.A < val {
+                            self.regs.F |= GbFlags::C;
+                        }
+                        if (self.regs.A & 0x0F) < (val & 0x0F) {
+                            self.regs.F |= GbFlags::H;
+                        }
+                        self.regs.A = self.regs.A.wrapping_sub(val);
+                        if self.regs.A == 0 { self.regs.F |= GbFlags::Z }
+                    }
+                    3 => {
+                        let val = self.read_from_ind(z);
+                        let carry = if self.regs.F.intersects(GbFlags::C) {1} else {0};
+                        self.regs.F |= GbFlags::N;
+                        if (self.regs.A as u16) < val as u16 + carry {
+                            self.regs.F |= GbFlags::C;
+                        }
+                        if (self.regs.A & 0x0F) < (val & 0x0F + carry as u8) {
+                            self.regs.F |= GbFlags::H;
+                        }
+                        self.regs.A = self.regs.A.wrapping_sub(val).wrapping_sub(carry as u8);
+                        if self.regs.A == 0 { self.regs.F |= GbFlags::Z }
+                    }
+                    4 => {
+                        self.regs.A &= self.read_from_ind(z);
+                        if self.regs.A == 0 { self.regs.F |= GbFlags::Z }
+                        self.regs.F -= GbFlags::N | GbFlags:: C;
+                        self.regs.F |= GbFlags::H;
+                    }
+                    5 => {
+                        self.regs.A ^= self.read_from_ind(z);
+                        if self.regs.A == 0 { self.regs.F |= GbFlags::Z }
+                        self.regs.F -= GbFlags::N | GbFlags::H | GbFlags::C;
+                    }
+                    6 => {
+                        self.regs.A |= self.read_from_ind(z);
+                        if self.regs.A == 0 { self.regs.F |= GbFlags::Z }
+                        self.regs.F -= GbFlags::N | GbFlags::H | GbFlags::C;
+                    }
+                    7 => {
+                        let val = self.read_from_ind(z);
+                        self.regs.F |= GbFlags::N;
+                        if self.regs.A < val {
+                            self.regs.F |= GbFlags::C;
+                        }
+                        if (self.regs.A & 0x0F) < (val & 0x0F) {
+                            self.regs.F |= GbFlags::H;
+                        }
+                        if self.regs.A == 0 { self.regs.F |= GbFlags::Z }
+                    }
+                    _ => unreachable!()
+                }
             }
             1 => {
 
