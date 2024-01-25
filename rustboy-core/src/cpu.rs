@@ -1,4 +1,4 @@
-use bitflags::{bitflags, Flags};
+use bitflags::bitflags;
 bitflags! {
     struct GbFlags: u8 {
         const Z = 1 << 7;
@@ -91,6 +91,14 @@ impl CPU {
         let q = y % 2;
         match x {
             0 => {
+            }
+            1 => {
+                //8 bit LD from register
+                if !(y == 7 && z == 7) {
+                    self.write_from_ind(y, self.read_from_ind(z));
+                }
+            }
+            2 => {
                 match y {
                     0 => {
                         let val = self.read_from_ind(z);
@@ -170,15 +178,6 @@ impl CPU {
                         if self.regs.A == 0 { self.regs.F |= GbFlags::Z }
                     }
                     _ => unreachable!()
-                }
-            }
-            1 => {
-
-            }
-            2 => {
-                //8 bit LD from register
-                if !(y == 7 && z == 7) {
-                    self.write_from_ind(y, self.read_from_ind(z));
                 }
             }
             3 => {
