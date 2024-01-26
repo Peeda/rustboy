@@ -1,4 +1,4 @@
-use bitflags::bitflags;
+use bitflags::{bitflags, Flags};
 bitflags! {
     struct GbFlags: u8 {
         const Z = 1 << 7;
@@ -92,6 +92,71 @@ impl CPU {
         let q = y % 2;
         match x {
             0 => {
+                match y << 3 | z {
+                    0o00 => {},
+                    0o20 => {
+                        //STOP
+                        todo!()
+                    }
+                    0o07 => {
+                        if self.regs.A & 1 << 7 > 0 {
+                            self.regs.F |= GbFlags::C;
+                        }
+                        self.regs.A = self.regs.A.rotate_left(1);
+                        self.regs.F -= GbFlags::Z | GbFlags::N | GbFlags::H;
+                    }
+                    0o17 => {
+                        if self.regs.A & 1 > 0 {
+                            self.regs.F |= GbFlags::C;
+                        }
+                        self.regs.A = self.regs.A.rotate_right(1);
+                        self.regs.F -= GbFlags::Z | GbFlags::N | GbFlags::H;
+                    }
+                    0o27 => {
+                        let carry = self.regs.F.contains(GbFlags::C);
+                        if self.regs.A & 1 << 7 > 0 {
+                            self.regs.F |= GbFlags::C;
+                        }
+                        self.regs.A << 1;
+                        if carry {
+                            self.regs.A |= 1;
+                        } else {
+                            self.regs.A &= !1;
+                        }
+                        self.regs.F -= GbFlags::Z | GbFlags::N | GbFlags::H;
+                    }
+                    0o37 => {
+                        let carry = self.regs.F.contains(GbFlags::C);
+                        if self.regs.A & 1 > 0 {
+                            self.regs.F |= GbFlags::C;
+                        }
+                        self.regs.A >> 1;
+                        if carry {
+                            self.regs.A |= 1 << 7;
+                        } else {
+                            self.regs.A &= !(1 << 7);
+                        }
+                        self.regs.F -= GbFlags::Z | GbFlags::N | GbFlags::H;
+                    }
+                    0o47 => {
+                        //daa
+                        todo!()
+                    }
+                    0o57 => {
+                        self.regs.A = !self.regs.A;
+                        self.regs.F |= GbFlags::N | GbFlags::H;
+                    }
+                    0o67 => {
+                        self.regs.F |= GbFlags::C;
+                    }
+                    0o77 => {
+                        if self.regs.F.contains(GbFlags::C) {
+                            self.regs.F -= GbFlags::C;
+                        } else {
+                            self.regs.F |= GbFlags::C;
+                        }
+                    }
+                }
             }
             1 => {
                 //8 bit LD from register
@@ -109,6 +174,7 @@ impl CPU {
                         self.arithmetic_eight(y, self.read_mem(self.PC));
                         self.PC += 1;
                     }
+                    _ => todo!()
                 }
             }
             _ => unreachable!()
