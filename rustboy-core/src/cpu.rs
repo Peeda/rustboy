@@ -78,6 +78,15 @@ impl CPU {
             _ => panic!("Invalid index"),
         }
     }
+    fn check_cond(&self, ind:u8) -> bool {
+        match ind {
+            0 => !self.regs.F.contains(GbFlags::Z),
+            1 => self.regs.F.contains(GbFlags::Z),
+            2 => !self.regs.F.contains(GbFlags::C),
+            3 => self.regs.F.contains(GbFlags::C),
+            _ => unreachable!()
+        }
+    }
     pub fn execute(&mut self, opcode: u8) -> u8 {
         self.PC += 1;
         //bits 6 and 7
@@ -90,19 +99,36 @@ impl CPU {
         let p = y >> 1;
         //bit 3
         let q = y % 2;
+        let mut extra_cycles = 0;
         match x {
             0 => {
                 match z {
                     0 => {
                         match y {
                             0 => {},
+                            2 => {
+                                //STOP
+                                todo!()
+                            }
                             3 => {
+                                //TODO: make an abstraction over jumping probably
                                 let shift = self.read_mem(self.PC) as i8;
                                 self.PC += 1;
                                 if shift >= 0 {
                                     self.PC.wrapping_add(shift as u16);
                                 } else {
                                     self.PC.wrapping_sub((shift * -1) as u16);
+                                }
+                            }
+                            4..=7 => {
+                                let shift = self.read_mem(self.PC) as i8;
+                                self.PC += 1;
+                                if self.check_cond(y - 4) {
+                                    if shift >= 0 {
+                                        self.PC.wrapping_add(shift as u16);
+                                    } else {
+                                        self.PC.wrapping_sub((shift * -1) as u16);
+                                    }
                                 }
                             }
                         }
@@ -193,8 +219,7 @@ impl CPU {
             }
             _ => unreachable!()
         }
-        //TODO: make sure to handle variable length codes
-        CLOCK[opcode as usize]
+        CLOCK[opcode as usize] + extra_cycles
     }
     fn arithmetic_eight(&mut self, id:u8, val:u8) {
         match id {
