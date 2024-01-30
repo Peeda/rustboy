@@ -106,6 +106,16 @@ impl CPU {
                     0 => {
                         match y {
                             0 => {},
+                            1 => {
+                                //TODO: check this something here is messed up for sure
+                                let addr_lsb = self.read_mem(self.PC);
+                                self.PC += 1;
+                                let addr_msb = self.read_mem(self.PC);
+                                self.PC += 1;
+                                let addr = (addr_msb as u16) << 8 | addr_lsb as u16;
+                                self.write_mem(addr, self.PC.to_le_bytes()[0]);
+                                self.write_mem(addr + 1, self.PC.to_le_bytes()[1]);
+                            }
                             2 => {
                                 //STOP
                                 todo!()
@@ -131,6 +141,7 @@ impl CPU {
                                     }
                                 }
                             }
+                            _ => unreachable!()
                         }
                     }
                     7 => {
