@@ -87,6 +87,27 @@ impl CPU {
             _ => unreachable!()
         }
     }
+    fn set_c(&mut self, c:bool) {
+        if c {
+            self.regs.F |= GbFlags::C;
+        } else {
+            self.regs.F -= GbFlags::C;
+        }
+    }
+    fn set_h(&mut self, h:bool) {
+        if h {
+            self.regs.F |= GbFlags::H;
+        } else {
+            self.regs.F -= GbFlags::H;
+        }
+    }
+    fn eval_z(&mut self) {
+        if self.regs.A == 0 {
+            self.regs.F |= GbFlags::Z;
+        } else {
+            self.regs.F -= GbFlags::Z;
+        }
+    }
     pub fn execute(&mut self, opcode: u8) -> u8 {
         self.PC += 1;
         //bits 6 and 7
@@ -241,43 +262,32 @@ impl CPU {
         }
         CLOCK[opcode as usize] + extra_cycles
     }
-    fn carry_flags(&mut self, c:bool, h:bool) {
-        if c {
-            self.regs.F |= GbFlags::C;
-        } else {
-            self.regs.F -= GbFlags::C;
-        }
-        if h {
-            self.regs.F |= GbFlags::H;
-        } else {
-            self.regs.F -= GbFlags::H;
-        }
-    }
     fn arithmetic_eight(&mut self, id:u8, val:u8) {
         match id {
             0 => {
                 self.regs.F -= GbFlags::N;
-                self.carry_flags(self.regs.A as u16 + val as u16 > u8::MAX.into(),
-                (self.regs.A & 0x0F) + (val & 0x0F) > 0x0F);
+                self.set_c(self.regs.A as u16 + val as u16 > u8::MAX.into());
+                self.set_h((self.regs.A & 0x0F) + (val & 0x0F) > 0x0F);
                 self.regs.A = self.regs.A.wrapping_add(val);
             }
             1 => {
                 let carry = if self.regs.F.intersects(GbFlags::C) {1} else {0};
                 self.regs.F -= GbFlags::N;
-                self.carry_flags(self.regs.A as u16 + val as u16 + carry > u8::MAX.into(),
-                (self.regs.A & 0x0F) + (val & 0x0F) + carry as u8 > 0x0F);
+                self.set_c(self.regs.A as u16 + val as u16 + carry > u8::MAX.into());
+                self.set_h((self.regs.A & 0x0F) + (val & 0x0F) + carry as u8 > 0x0F);
                 self.regs.A = self.regs.A.wrapping_add(val).wrapping_add(carry as u8);
             }
             2 => {
                 self.regs.F |= GbFlags::N;
-                self.carry_flags(self.regs.A < val, (self.regs.A & 0x0F) < (val & 0x0F));
+                self.set_c(self.regs.A < val);
+                self.set_h((self.regs.A & 0x0F) < (val & 0x0F));
                 self.regs.A = self.regs.A.wrapping_sub(val);
             }
             3 => {
                 let carry = if self.regs.F.intersects(GbFlags::C) {1} else {0};
                 self.regs.F |= GbFlags::N;
-                self.carry_flags((self.regs.A as u16) < val as u16 + carry, 
-                (self.regs.A & 0x0F) < (val & 0x0F + carry as u8));
+                self.set_c((self.regs.A as u16) < val as u16 + carry);
+                self.set_h((self.regs.A & 0x0F) < (val & 0x0F + carry as u8));
                 self.regs.A = self.regs.A.wrapping_sub(val).wrapping_sub(carry as u8);
             }
             4 => {
@@ -304,11 +314,7 @@ impl CPU {
             }
             _ => unreachable!()
         }
-        if self.regs.A == 0 {
-            self.regs.F |= GbFlags::Z;
-        } else {
-            self.regs.F -= GbFlags::Z;
-        }
+        self.eval_z();
     }
     fn read_mem(&self, addr:u16) -> u8 {
         todo!()
