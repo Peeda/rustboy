@@ -1,4 +1,4 @@
-use bitflags::{bitflags, Flags};
+use bitflags::bitflags;
 bitflags! {
     struct GbFlags: u8 {
         const Z = 1 << 7;
@@ -146,25 +146,27 @@ impl CPU {
                                 let shift = self.read_mem(self.PC) as i8;
                                 self.PC += 1;
                                 if shift >= 0 {
-                                    self.PC.wrapping_add(shift as u16);
+                                    self.PC = self.PC.wrapping_add(shift as u16);
                                 } else {
-                                    self.PC.wrapping_sub((shift * -1) as u16);
+                                    self.PC = self.PC.wrapping_sub((shift * -1) as u16);
                                 }
                             }
                             4..=7 => {
                                 let shift = self.read_mem(self.PC) as i8;
                                 self.PC += 1;
                                 if self.check_cond(y - 4) {
+                                    extra_cycles = 4;
                                     if shift >= 0 {
-                                        self.PC.wrapping_add(shift as u16);
+                                        self.PC = self.PC.wrapping_add(shift as u16);
                                     } else {
-                                        self.PC.wrapping_sub((shift * -1) as u16);
+                                        self.PC = self.PC.wrapping_sub((shift * -1) as u16);
                                     }
                                 }
                             }
                             _ => unreachable!()
                         }
                     }
+                    1..=6 => todo!(),
                     7 => {
                         match y {
                             0 => {
@@ -193,7 +195,7 @@ impl CPU {
                                 } else {
                                     self.regs.F -= GbFlags::C;
                                 }
-                                self.regs.A << 1;
+                                self.regs.A <<= 1;
                                 if carry {
                                     self.regs.A |= 1;
                                 } else {
@@ -208,7 +210,7 @@ impl CPU {
                                 } else {
                                     self.regs.F -= GbFlags::C;
                                 }
-                                self.regs.A >> 1;
+                                self.regs.A >>= 1;
                                 if carry {
                                     self.regs.A |= 1 << 7;
                                 } else {
@@ -237,6 +239,7 @@ impl CPU {
                             _ => unreachable!()
                         }
                     }
+                    _ => unreachable!()
                 }
             }
             1 => {
@@ -251,11 +254,12 @@ impl CPU {
             3 => {
                 match z {
                     //immediate 8 bit arithmetic
-                    0b110 => {
+                    1..=5 | 7 => todo!(),
+                    6 => {
                         self.arithmetic_eight(y, self.read_mem(self.PC));
                         self.PC += 1;
                     }
-                    _ => todo!()
+                    _ => todo!(),
                 }
             }
             _ => unreachable!()
