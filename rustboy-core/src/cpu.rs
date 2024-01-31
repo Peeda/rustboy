@@ -1,3 +1,4 @@
+use crate::tables::FlagEffect;
 use bitflags::bitflags;
 bitflags! {
     struct GbFlags: u8 {
@@ -166,7 +167,18 @@ impl CPU {
                             _ => unreachable!()
                         }
                     }
-                    1..=6 => todo!(),
+                    1..=3 => todo!(),
+                    4 => {
+                        self.regs.F -= GbFlags::N;
+                        self.set_h((self.read_from_ind(y) & 0x0F) + 1 > 0x0F);
+                        self.write_from_ind(y, self.read_from_ind(y).wrapping_add(1));
+                        self.eval_z();
+                    }
+                    5 => {
+                    }
+                    6 => {
+
+                    }
                     7 => {
                         match y {
                             0 => {
