@@ -147,8 +147,11 @@ impl CPU {
                     7 => {
                         match y {
                             0 => {
+                                //TODO: gotta make an abstraction over flag behavior
                                 if self.regs.A & 1 << 7 > 0 {
                                     self.regs.F |= GbFlags::C;
+                                } else {
+                                    self.regs.F -= GbFlags::C;
                                 }
                                 self.regs.A = self.regs.A.rotate_left(1);
                                 self.regs.F -= GbFlags::Z | GbFlags::N | GbFlags::H;
@@ -156,6 +159,8 @@ impl CPU {
                             1 => {
                                 if self.regs.A & 1 > 0 {
                                     self.regs.F |= GbFlags::C;
+                                } else {
+                                    self.regs.F -= GbFlags::C;
                                 }
                                 self.regs.A = self.regs.A.rotate_right(1);
                                 self.regs.F -= GbFlags::Z | GbFlags::N | GbFlags::H;
@@ -164,6 +169,8 @@ impl CPU {
                                 let carry = self.regs.F.contains(GbFlags::C);
                                 if self.regs.A & 1 << 7 > 0 {
                                     self.regs.F |= GbFlags::C;
+                                } else {
+                                    self.regs.F -= GbFlags::C;
                                 }
                                 self.regs.A << 1;
                                 if carry {
@@ -177,6 +184,8 @@ impl CPU {
                                 let carry = self.regs.F.contains(GbFlags::C);
                                 if self.regs.A & 1 > 0 {
                                     self.regs.F |= GbFlags::C;
+                                } else {
+                                    self.regs.F -= GbFlags::C;
                                 }
                                 self.regs.A >> 1;
                                 if carry {
