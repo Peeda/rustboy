@@ -291,12 +291,11 @@ impl CPU {
                         } else {
                             assert!(!val, "{:X} gave wrong flag {}",opcode,i);
                         }
+                    }
+                    if flag_effect == FlagEffect::Set {
+                        self.set_flag(i, true);
                     } else {
-                        if flag_effect == FlagEffect::Set {
-                            self.set_flag(i, true);
-                        } else {
-                            self.set_flag(i, false);
-                        }
+                        self.set_flag(i, false);
                     }
                 }
                 FlagEffect::NoEffect => {
