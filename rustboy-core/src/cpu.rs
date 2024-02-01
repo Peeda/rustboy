@@ -1,5 +1,9 @@
 use crate::tables::{FlagEffect, CLOCK, ALT_CLOCK, ZERO_FLAG, SUB_FLAG, HALF_FLAG, CARRY_FLAG};
 use bitflags::bitflags;
+const Z:usize = 0;
+const N:usize = 1;
+const H:usize = 2;
+const C:usize = 3;
 bitflags! {
     struct GbFlags: u8 {
         const Z = 1 << 7;
@@ -84,27 +88,6 @@ impl CPU {
             _ => panic!()
         }
     }
-    fn set_c(&mut self, c:bool) {
-        if c {
-            self.regs.F |= GbFlags::C;
-        } else {
-            self.regs.F -= GbFlags::C;
-        }
-    }
-    fn set_h(&mut self, h:bool) {
-        if h {
-            self.regs.F |= GbFlags::H;
-        } else {
-            self.regs.F -= GbFlags::H;
-        }
-    }
-    fn eval_z(&mut self) {
-        if self.regs.A == 0 {
-            self.regs.F |= GbFlags::Z;
-        } else {
-            self.regs.F -= GbFlags::Z;
-        }
-    }
     pub fn execute(&mut self, opcode: u8) -> u8 {
         self.PC += 1;
         //bits 6 and 7
@@ -167,10 +150,9 @@ impl CPU {
                     }
                     1..=3 => todo!(),
                     4 => {
-                        self.regs.F -= GbFlags::N;
-                        self.set_h((self.read_from_ind(y) & 0x0F) + 1 > 0x0F);
+                        flag_effects[H] = Some((self.read_from_ind(y) & 0x0F) + 1 > 0x0F);
                         self.write_from_ind(y, self.read_from_ind(y).wrapping_add(1));
-                        self.eval_z();
+                        flag_effects[Z] = Some(self.regs.A == 0);
                     }
                     5 => {
                     }
@@ -180,71 +162,51 @@ impl CPU {
                     7 => {
                         match y {
                             0 => {
-                                //TODO: gotta make an abstraction over flag behavior
-                                if self.regs.A & 1 << 7 > 0 {
-                                    self.regs.F |= GbFlags::C;
-                                } else {
-                                    self.regs.F -= GbFlags::C;
-                                }
+                                //rlca
+                                flag_effects[C] = Some(self.regs.A & 1 << 7 > 0);
                                 self.regs.A = self.regs.A.rotate_left(1);
-                                self.regs.F -= GbFlags::Z | GbFlags::N | GbFlags::H;
                             }
                             1 => {
-                                if self.regs.A & 1 > 0 {
-                                    self.regs.F |= GbFlags::C;
-                                } else {
-                                    self.regs.F -= GbFlags::C;
-                                }
+                                //rrca
+                                flag_effects[C] = Some(self.regs.A & 1 > 0);
                                 self.regs.A = self.regs.A.rotate_right(1);
-                                self.regs.F -= GbFlags::Z | GbFlags::N | GbFlags::H;
                             }
                             2 => {
+                                //rla
                                 let carry = self.regs.F.contains(GbFlags::C);
-                                if self.regs.A & 1 << 7 > 0 {
-                                    self.regs.F |= GbFlags::C;
-                                } else {
-                                    self.regs.F -= GbFlags::C;
-                                }
+                                flag_effects[C] = Some(self.regs.A & 1 << 7 > 0);
                                 self.regs.A <<= 1;
                                 if carry {
                                     self.regs.A |= 1;
                                 } else {
                                     self.regs.A &= !1;
                                 }
-                                self.regs.F -= GbFlags::Z | GbFlags::N | GbFlags::H;
                             }
                             3 => {
+                                //rra
                                 let carry = self.regs.F.contains(GbFlags::C);
-                                if self.regs.A & 1 > 0 {
-                                    self.regs.F |= GbFlags::C;
-                                } else {
-                                    self.regs.F -= GbFlags::C;
-                                }
+                                flag_effects[C] = Some(self.regs.A & 1 > 0);
                                 self.regs.A >>= 1;
                                 if carry {
                                     self.regs.A |= 1 << 7;
                                 } else {
                                     self.regs.A &= !(1 << 7);
                                 }
-                                self.regs.F -= GbFlags::Z | GbFlags::N | GbFlags::H;
                             }
                             4 => {
                                 //daa
                                 todo!()
                             }
                             5 => {
+                                //cpl
                                 self.regs.A = !self.regs.A;
-                                self.regs.F |= GbFlags::N | GbFlags::H;
                             }
                             6 => {
-                                self.regs.F |= GbFlags::C;
+                                //scf
                             }
                             7 => {
-                                if self.regs.F.contains(GbFlags::C) {
-                                    self.regs.F -= GbFlags::C;
-                                } else {
-                                    self.regs.F |= GbFlags::C;
-                                }
+                                //ccf
+                                flag_effects[C] = Some(!self.regs.F.contains(GbFlags::C));
                             }
                             _ => unreachable!()
                         }
@@ -259,14 +221,14 @@ impl CPU {
                 }
             }
             2 => {
-                self.arithmetic_eight(y, self.read_from_ind(z));
+                self.arithmetic_eight(y, self.read_from_ind(z), &mut flag_effects);
             }
             3 => {
                 match z {
                     //immediate 8 bit arithmetic
                     1..=5 | 7 => todo!(),
                     6 => {
-                        self.arithmetic_eight(y, self.read_mem(self.PC));
+                        self.arithmetic_eight(y, self.read_mem(self.PC), &mut flag_effects);
                         self.PC += 1;
                     }
                     _ => todo!(),
@@ -316,59 +278,44 @@ impl CPU {
             ALT_CLOCK[opcode as usize]
         }
     }
-    fn arithmetic_eight(&mut self, id:u8, val:u8) {
+    fn arithmetic_eight(&mut self, id:u8, val:u8, flag_effects:&mut [Option<bool>;4]) {
         match id {
             0 => {
-                self.regs.F -= GbFlags::N;
-                self.set_c(self.regs.A as u16 + val as u16 > u8::MAX.into());
-                self.set_h((self.regs.A & 0x0F) + (val & 0x0F) > 0x0F);
+                flag_effects[H] = Some((self.regs.A & 0x0F) + (val & 0x0F) > 0x0F);
+                flag_effects[C] = Some(self.regs.A as u16 + val as u16 > u8::MAX.into());
                 self.regs.A = self.regs.A.wrapping_add(val);
             }
             1 => {
-                let carry = if self.regs.F.intersects(GbFlags::C) {1} else {0};
-                self.regs.F -= GbFlags::N;
-                self.set_c(self.regs.A as u16 + val as u16 + carry > u8::MAX.into());
-                self.set_h((self.regs.A & 0x0F) + (val & 0x0F) + carry as u8 > 0x0F);
+                let carry = if self.regs.F.contains(GbFlags::C) {1} else {0};
+                flag_effects[H] = Some((self.regs.A & 0x0F) + (val & 0x0F) + carry as u8 > 0x0F);
+                flag_effects[C] = Some(self.regs.A as u16 + val as u16 + carry > u8::MAX.into());
                 self.regs.A = self.regs.A.wrapping_add(val).wrapping_add(carry as u8);
             }
             2 => {
-                self.regs.F |= GbFlags::N;
-                self.set_c(self.regs.A < val);
-                self.set_h((self.regs.A & 0x0F) < (val & 0x0F));
+                flag_effects[H] = Some((self.regs.A & 0x0F) < (val & 0x0F));
+                flag_effects[C] = Some(self.regs.A < val);
                 self.regs.A = self.regs.A.wrapping_sub(val);
             }
             3 => {
-                let carry = if self.regs.F.intersects(GbFlags::C) {1} else {0};
-                self.regs.F |= GbFlags::N;
-                self.set_c((self.regs.A as u16) < val as u16 + carry);
-                self.set_h((self.regs.A & 0x0F) < (val & 0x0F + carry as u8));
+                let carry = if self.regs.F.contains(GbFlags::C) {1} else {0};
+                flag_effects[H] = Some((self.regs.A & 0x0F) < (val & 0x0F + carry as u8));
+                flag_effects[C] = Some((self.regs.A as u16) < val as u16 + carry);
                 self.regs.A = self.regs.A.wrapping_sub(val).wrapping_sub(carry as u8);
             }
-            4 => {
-                self.regs.A &= val;
-                self.regs.F -= GbFlags::N | GbFlags:: C;
-                self.regs.F |= GbFlags::H;
-            }
-            5 => {
-                self.regs.A ^= val;
-                self.regs.F -= GbFlags::N | GbFlags::H | GbFlags::C;
-            }
-            6 => {
-                self.regs.A |= val;
-                self.regs.F -= GbFlags::N | GbFlags::H | GbFlags::C;
-            }
+            4 => self.regs.A &= val,
+            5 => self.regs.A ^= val,
+            6 => self.regs.A |= val,
             7 => {
-                self.regs.F |= GbFlags::N;
                 if self.regs.A < val {
-                    self.regs.F |= GbFlags::C;
+                    flag_effects[C] = Some(true);
                 }
                 if (self.regs.A & 0x0F) < (val & 0x0F) {
-                    self.regs.F |= GbFlags::H;
+                    flag_effects[H] = Some(true);
                 }
             }
             _ => unreachable!()
         }
-        self.eval_z();
+        flag_effects[Z] = Some(self.regs.A == 0);
     }
     fn read_mem(&self, addr:u16) -> u8 {
         todo!()
