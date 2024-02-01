@@ -6,7 +6,7 @@ data = response.json()
 cnt = 0
 unprefixed = data["unprefixed"]
 print('''
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum FlagEffect {
     Set,
     Unset,

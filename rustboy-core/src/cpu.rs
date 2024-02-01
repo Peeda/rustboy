@@ -1,4 +1,4 @@
-use crate::tables::FlagEffect;
+use crate::tables::{FlagEffect, CLOCK, ALT_CLOCK, ZERO_FLAG, SUB_FLAG, HALF_FLAG, CARRY_FLAG};
 use bitflags::bitflags;
 bitflags! {
     struct GbFlags: u8 {
@@ -51,6 +51,39 @@ impl CPU {
             _ => unreachable!()
         }
     }
+    fn set_flag(&mut self, i:u8, val:bool) {
+        match i {
+            0 => {
+                if val {
+                    self.regs.F |= GbFlags::Z;
+                } else {
+                    self.regs.F -= GbFlags::Z;
+                }
+            }
+            1 => {
+                if val {
+                    self.regs.F |= GbFlags::N;
+                } else {
+                    self.regs.F -= GbFlags::N;
+                }
+            }
+            2 => {
+                if val {
+                    self.regs.F |= GbFlags::H;
+                } else {
+                    self.regs.F -= GbFlags::H;
+                }
+            }
+            3 => {
+                if val {
+                    self.regs.F |= GbFlags::C;
+                } else {
+                    self.regs.F -= GbFlags::C;
+                }
+            }
+            _ => panic!()
+        }
+    }
     fn set_c(&mut self, c:bool) {
         if c {
             self.regs.F |= GbFlags::C;
@@ -84,7 +117,9 @@ impl CPU {
         let p = y >> 1;
         //bit 3
         let q = y % 2;
-        let mut extra_cycles = 0;
+        let mut extra_cycles:Option<bool> = None;
+        //Index in order ZNHC
+        let mut flag_effects:[Option<bool>; 4] = [None,None,None,None];
         match x {
             0 => {
                 match z {
@@ -119,7 +154,7 @@ impl CPU {
                                 let shift = self.read_mem(self.PC) as i8;
                                 self.PC += 1;
                                 if self.check_cond(y - 4) {
-                                    extra_cycles = 4;
+                                    extra_cycles = Some(true);
                                     if shift >= 0 {
                                         self.PC = self.PC.wrapping_add(shift as u16);
                                     } else {
@@ -239,7 +274,48 @@ impl CPU {
             }
             _ => unreachable!()
         }
-        CLOCK[opcode as usize] + extra_cycles
+        for i in 0..4 {
+            let flag_effect = match i {
+                0 => ZERO_FLAG[opcode as usize],
+                1 => SUB_FLAG[opcode as usize],
+                2 => HALF_FLAG[opcode as usize],
+                3 => CARRY_FLAG[opcode as usize],
+                _ => unreachable!()
+            };
+            match flag_effect {
+                FlagEffect::Set | FlagEffect::Unset => {
+                    if flag_effects[i as usize].is_some() {
+                        let val = flag_effects[i as usize].unwrap();
+                        if flag_effect == FlagEffect::Set {
+                            assert!(val, "{:X} gave wrong flag {}",opcode,i);
+                        } else {
+                            assert!(!val, "{:X} gave wrong flag {}",opcode,i);
+                        }
+                    } else {
+                        if flag_effect == FlagEffect::Set {
+                            self.set_flag(i, true);
+                        } else {
+                            self.set_flag(i, false);
+                        }
+                    }
+                }
+                FlagEffect::NoEffect => {
+                    assert!(flag_effects[i as usize].is_none(), 
+                    "{:X} shouldn't modify flag {}", opcode, i);
+                }
+                FlagEffect::Conditional => {
+                    self.set_flag(i, flag_effects[i as usize].expect(
+                        format!("{:X} didn't modify flag {}",opcode,i).as_str()
+                    ));
+                }
+            }
+        }
+        if ALT_CLOCK[opcode as usize] == 0 || !extra_cycles.expect(format!(
+        "{:X} didn't provide extra cycles condition",opcode).as_str()) {
+            CLOCK[opcode as usize]
+        } else {
+            ALT_CLOCK[opcode as usize]
+        }
     }
     fn arithmetic_eight(&mut self, id:u8, val:u8) {
         match id {
