@@ -21,7 +21,9 @@ pub struct CPU {
 }
 impl CPU {
     fn fetch_byte(&mut self) -> u8 {
-
+        let val = self.read_mem(self.PC);
+        self.PC += 1;
+        val
     }
     fn read_r8(&self, ind:u8) -> u8 {
         match ind {
@@ -144,10 +146,8 @@ impl CPU {
                             0 => {},
                             1 => {
                                 //TODO: check this something here is messed up for sure
-                                let addr_lsb = self.read_mem(self.PC);
-                                self.PC += 1;
-                                let addr_msb = self.read_mem(self.PC);
-                                self.PC += 1;
+                                let addr_lsb = self.fetch_byte();
+                                let addr_msb = self.fetch_byte();
                                 let addr = (addr_msb as u16) << 8 | addr_lsb as u16;
                                 self.write_mem(addr, self.PC.to_le_bytes()[0]);
                                 self.write_mem(addr + 1, self.PC.to_le_bytes()[1]);
@@ -158,8 +158,7 @@ impl CPU {
                             }
                             3 => {
                                 //TODO: make an abstraction over jumping probably
-                                let shift = self.read_mem(self.PC) as i8;
-                                self.PC += 1;
+                                let shift = self.fetch_byte() as i8;
                                 if shift >= 0 {
                                     self.PC = self.PC.wrapping_add(shift as u16);
                                 } else {
@@ -167,8 +166,7 @@ impl CPU {
                                 }
                             }
                             4..=7 => {
-                                let shift = self.read_mem(self.PC) as i8;
-                                self.PC += 1;
+                                let shift = self.fetch_byte() as i8;
                                 if self.check_cond(y - 4) {
                                     extra_cycles = Some(true);
                                     if shift >= 0 {
@@ -200,8 +198,7 @@ impl CPU {
                         flag_effects[Z] = Some(self.regs.A == 0);
                     }
                     6 => {
-                        let val = self.read_mem(self.PC);
-                        self.PC += 1;
+                        let val = self.fetch_byte();
                         self.write_r8(y, val);
                     }
                     7 => {
@@ -273,8 +270,8 @@ impl CPU {
                     //immediate 8 bit arithmetic
                     1..=5 | 7 => todo!(),
                     6 => {
-                        self.arithmetic_eight(y, self.read_mem(self.PC), &mut flag_effects);
-                        self.PC += 1;
+                        let val = self.fetch_byte();
+                        self.arithmetic_eight(y, val, &mut flag_effects);
                     }
                     _ => todo!(),
                 }
