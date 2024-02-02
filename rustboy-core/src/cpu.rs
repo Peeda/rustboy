@@ -21,9 +21,9 @@ pub struct CPU {
 }
 impl CPU {
     fn fetch_byte(&mut self) -> u8 {
-        
+
     }
-    fn read_from_ind(&self, ind:u8) -> u8 {
+    fn read_r8(&self, ind:u8) -> u8 {
         match ind {
             0 => self.regs.B,
             1 => self.regs.C,
@@ -36,7 +36,7 @@ impl CPU {
             _ => panic!("Invalid index")
         }
     }
-    fn write_from_ind(&mut self, ind:u8, data:u8) {
+    fn write_r8(&mut self, ind:u8, data:u8) {
         match ind {
             0 => self.regs.B = data,
             1 => self.regs.C = data,
@@ -190,19 +190,19 @@ impl CPU {
                     }
                     2..=3 => todo!(),
                     4 => {
-                        flag_effects[H] = Some((self.read_from_ind(y) & 0x0F) + 1 > 0x0F);
-                        self.write_from_ind(y, self.read_from_ind(y).wrapping_add(1));
+                        flag_effects[H] = Some((self.read_r8(y) & 0x0F) + 1 > 0x0F);
+                        self.write_r8(y, self.read_r8(y).wrapping_add(1));
                         flag_effects[Z] = Some(self.regs.A == 0);
                     }
                     5 => {
-                        flag_effects[H] = Some(self.read_from_ind(y) & 0x0F == 0);
-                        self.write_from_ind(y, self.read_from_ind(y).wrapping_sub(1));
+                        flag_effects[H] = Some(self.read_r8(y) & 0x0F == 0);
+                        self.write_r8(y, self.read_r8(y).wrapping_sub(1));
                         flag_effects[Z] = Some(self.regs.A == 0);
                     }
                     6 => {
                         let val = self.read_mem(self.PC);
                         self.PC += 1;
-                        self.write_from_ind(y, val);
+                        self.write_r8(y, val);
                     }
                     7 => {
                         match y {
@@ -262,11 +262,11 @@ impl CPU {
             1 => {
                 //8 bit LD from register
                 if !(y == 7 && z == 7) {
-                    self.write_from_ind(y, self.read_from_ind(z));
+                    self.write_r8(y, self.read_r8(z));
                 }
             }
             2 => {
-                self.arithmetic_eight(y, self.read_from_ind(z), &mut flag_effects);
+                self.arithmetic_eight(y, self.read_r8(z), &mut flag_effects);
             }
             3 => {
                 match z {
