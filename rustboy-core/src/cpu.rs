@@ -20,6 +20,9 @@ pub struct CPU {
     PC: u16,
 }
 impl CPU {
+    fn fetch_byte(&mut self) -> u8 {
+        
+    }
     fn read_from_ind(&self, ind:u8) -> u8 {
         match ind {
             0 => self.regs.B,
@@ -44,6 +47,36 @@ impl CPU {
             6 => self.write_mem(self.regs.read_hl(), data),
             7 => self.regs.A = data,
             _ => panic!("Invalid index"),
+        }
+    }
+    fn read_r16(&self, ind:u8, sp:bool) -> u16 {
+        match ind {
+            0 => self.regs.read_bc(),
+            1 => self.regs.read_de(),
+            2 => self.regs.read_hl(),
+            3 => {
+                if sp {
+                    self.SP
+                } else {
+                    self.regs.read_af()
+                }
+            }
+            _ => unreachable!()
+        }
+    }
+    fn write_r16(&mut self, ind:u8, sp:bool, val:u16) {
+        match ind {
+            0 => self.regs.write_bc(val),
+            1 => self.regs.write_de(val),
+            2 => self.regs.write_hl(val),
+            3 => {
+                if sp {
+                    self.SP = val;
+                } else {
+                    self.regs.write_af(val);
+                }
+            }
+            _ => unreachable!()
         }
     }
     fn check_cond(&self, ind:u8) -> bool {
@@ -148,16 +181,28 @@ impl CPU {
                             _ => unreachable!()
                         }
                     }
-                    1..=3 => todo!(),
+                    1 => {
+                        if q == 0 {
+
+                        } else if q == 1 {
+                            
+                        } else {panic!()}
+                    }
+                    2..=3 => todo!(),
                     4 => {
                         flag_effects[H] = Some((self.read_from_ind(y) & 0x0F) + 1 > 0x0F);
                         self.write_from_ind(y, self.read_from_ind(y).wrapping_add(1));
                         flag_effects[Z] = Some(self.regs.A == 0);
                     }
                     5 => {
+                        flag_effects[H] = Some(self.read_from_ind(y) & 0x0F == 0);
+                        self.write_from_ind(y, self.read_from_ind(y).wrapping_sub(1));
+                        flag_effects[Z] = Some(self.regs.A == 0);
                     }
                     6 => {
-
+                        let val = self.read_mem(self.PC);
+                        self.PC += 1;
+                        self.write_from_ind(y, val);
                     }
                     7 => {
                         match y {
@@ -247,6 +292,7 @@ impl CPU {
             match flag_effect {
                 FlagEffect::Set | FlagEffect::Unset => {
                     if flag_effects[i as usize].is_some() {
+                        eprintln!("{:X} doesn't need to provide flag {}",opcode,i);
                         let val = flag_effects[i as usize].unwrap();
                         if flag_effect == FlagEffect::Set {
                             assert!(val, "{:X} gave wrong flag {}",opcode,i);
