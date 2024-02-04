@@ -51,13 +51,25 @@ impl CPU {
             _ => panic!("Invalid index"),
         }
     }
-    fn read_r16(&self, ind:u8, sp:bool) -> u16 {
+    fn read_r16(&self, ind:u8) -> u16 {
+        self.helper_read_r16(ind, true)
+    }
+    fn write_r16(&mut self, ind:u8, val:u16) {
+        self.helper_write_r16(ind, val, true);
+    }
+    fn read_r16_sp(&self, ind:u8) -> u16 {
+        self.helper_read_r16(ind, false)
+    }
+    fn write_r16_sp(&mut self, ind:u8, val:u16) {
+        self.helper_write_r16(ind, val, false);
+    }
+    fn helper_read_r16(&self, ind:u8, variant:bool) -> u16 {
         match ind {
             0 => self.regs.read_bc(),
             1 => self.regs.read_de(),
             2 => self.regs.read_hl(),
             3 => {
-                if sp {
+                if variant {
                     self.SP
                 } else {
                     self.regs.read_af()
@@ -66,13 +78,13 @@ impl CPU {
             _ => unreachable!()
         }
     }
-    fn write_r16(&mut self, ind:u8, sp:bool, val:u16) {
+    fn helper_write_r16(&mut self, ind:u8, val:u16, variant:bool) {
         match ind {
             0 => self.regs.write_bc(val),
             1 => self.regs.write_de(val),
             2 => self.regs.write_hl(val),
             3 => {
-                if sp {
+                if variant {
                     self.SP = val;
                 } else {
                     self.regs.write_af(val);
@@ -138,6 +150,7 @@ impl CPU {
         let mut extra_cycles:Option<bool> = None;
         //Index in order ZNHC
         let mut flag_effects:[Option<bool>; 4] = [None,None,None,None];
+        //based on https://gb-archive.github.io/salvage/decoding_gbz80_opcodes/Decoding%20Gamboy%20Z80%20Opcodes.html
         match x {
             0 => {
                 match z {
@@ -145,10 +158,9 @@ impl CPU {
                         match y {
                             0 => {},
                             1 => {
-                                //TODO: check this something here is messed up for sure
-                                let addr_lsb = self.fetch_byte();
-                                let addr_msb = self.fetch_byte();
-                                let addr = (addr_msb as u16) << 8 | addr_lsb as u16;
+                                let addr_lsb = self.fetch_byte() as u16;
+                                let addr_msb = self.fetch_byte() as u16;
+                                let addr = addr_msb << 8 | addr_lsb;
                                 self.write_mem(addr, self.PC.to_le_bytes()[0]);
                                 self.write_mem(addr + 1, self.PC.to_le_bytes()[1]);
                             }
@@ -181,23 +193,75 @@ impl CPU {
                     }
                     1 => {
                         if q == 0 {
-
+                            //16 bit immediate load
+                            let lsb = self.fetch_byte() as u16;
+                            let msb = self.fetch_byte() as u16;
+                            let val = msb << 8 | lsb;
+                            self.write_r16(p, val);
                         } else if q == 1 {
-                            
-                        } else {panic!()}
+                            //16 bit add
+                            let val = self.read_r16(p);
+                            flag_effects[H] = Some((self.regs.read_hl() & 0xFFF) + (val & 0xFFF) > 0xFFF);
+                            flag_effects[C] = Some(self.regs.read_hl() as u32 + val as u32 > u16::MAX.into());
+                            self.regs.write_hl(self.regs.read_hl().wrapping_add(val));
+                        } else {unreachable!()}
                     }
-                    2..=3 => todo!(),
+                    2 => {
+                        match (q,p) {
+                            (0,0) => {
+                                self.write_mem(self.regs.read_bc(), self.regs.A);
+                            }
+                            (0,1) => {
+                                self.write_mem(self.regs.read_de(), self.regs.A);
+                            }
+                            (0,2) => {
+                                self.write_mem(self.regs.read_hl(), self.regs.A);
+                                self.regs.write_hl(self.regs.read_hl().wrapping_add(1));
+                            }
+                            (0,3) => {
+                                self.write_mem(self.regs.read_hl(), self.regs.A);
+                                self.regs.write_hl(self.regs.read_hl().wrapping_sub(1));
+                            }
+                            (1,0) => {
+                                self.regs.A = self.read_mem(self.regs.read_bc());
+                            }
+                            (1,1) => {
+                                self.regs.A = self.read_mem(self.regs.read_de());
+                            }
+                            (1,2) => {
+                                self.regs.A = self.read_mem(self.regs.read_hl());
+                                self.regs.write_hl(self.regs.read_hl().wrapping_add(1));
+                            }
+                            (1,3) => {
+                                self.regs.A = self.read_mem(self.regs.read_hl());
+                                self.regs.write_hl(self.regs.read_hl().wrapping_sub(1));
+                            }
+                            _ => unreachable!()
+                        }
+                    }
+                    3 => {
+                        if q == 0 {
+                            //16 bit inc
+                            self.write_r16(p, self.read_r16(p).wrapping_add(1));
+                        } else if q == 1 {
+                            //16 bit dec
+                            self.write_r16(p, self.read_r16(p).wrapping_sub(1));
+                        } else {unreachable!()}
+                    }
                     4 => {
+                        //8 bit inc
                         flag_effects[H] = Some((self.read_r8(y) & 0x0F) + 1 > 0x0F);
                         self.write_r8(y, self.read_r8(y).wrapping_add(1));
                         flag_effects[Z] = Some(self.regs.A == 0);
                     }
                     5 => {
+                        //8 bit dec
                         flag_effects[H] = Some(self.read_r8(y) & 0x0F == 0);
                         self.write_r8(y, self.read_r8(y).wrapping_sub(1));
                         flag_effects[Z] = Some(self.regs.A == 0);
                     }
                     6 => {
+                        //immediate load r8
                         let val = self.fetch_byte();
                         self.write_r8(y, val);
                     }
