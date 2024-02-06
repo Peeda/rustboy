@@ -5,8 +5,8 @@ response = requests.get("https://gbdev.io/gb-opcodes/Opcodes.json")
 data = response.json()
 cnt = 0
 unprefixed = data["unprefixed"]
-print('''
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+prefixed = data["cbprefixed"]
+print('''#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum FlagEffect {
     Set,
     Unset,
@@ -40,82 +40,47 @@ for d in unprefixed:
         print()
 print("];")
 
-print("pub const ZERO_FLAG:[FlagEffect; 256] = [")
-for d in unprefixed:
-    out = ""
-    match unprefixed[d]["flags"]["Z"]:
-        case "1":
-            out = "T"
-        case "0":
-            out = "F"
-        case "Z":
-            out = "A"
-        case "-":
-            out = "B"
-        case other:
-            out = "AHHHH"
+print("pub const CB_CLOCK:[u8; 256] = [")
+for d in prefixed:
+    out ='{:2d}'.format(prefixed[d]["cycles"][0]) 
     print(out, end=", ")
     cnt += 1
     if cnt % 16 == 0:
         print()
 print("];")
 
-print("pub const SUB_FLAG:[FlagEffect; 256] = [")
-for d in unprefixed:
-    out = ""
-    match unprefixed[d]["flags"]["N"]:
-        case "1":
-            out = "T"
-        case "0":
-            out = "F"
-        case "N":
-            out = "A"
-        case "-":
-            out = "B"
-        case other:
-            out = "AHHHH"
-    print(out, end=", ")
-    cnt += 1
-    if cnt % 16 == 0:
-        print()
-print("];")
+def flag_table(name, id_char, is_prefixed):
+    cnt = 0
+    print("pub const " + name + ":[FlagEffect; 256] = [")
+    if is_prefixed:
+        table = prefixed
+    else:
+        table = unprefixed
 
-print("pub const HALF_FLAG:[FlagEffect; 256] = [")
-for d in unprefixed:
-    out = ""
-    match unprefixed[d]["flags"]["H"]:
-        case "1":
+    for d in table:
+        out = ""
+        curr = table[d]["flags"][id_char]
+        if curr == "1":
             out = "T"
-        case "0":
+        elif curr == "0":
             out = "F"
-        case "H":
+        elif curr == id_char:
             out = "A"
-        case "-":
+        elif curr == "-":
             out = "B"
-        case other:
-            out = "AHHHH"
-    print(out, end=", ")
-    cnt += 1
-    if cnt % 16 == 0:
-        print()
-print("];")
+        else:
+            out = "AHHHHH"
+        print(out, end=", ")
+        cnt += 1
+        if cnt % 16 == 0:
+            print()
+    print("];")
 
-print("pub const CARRY_FLAG:[FlagEffect; 256] = [")
-for d in unprefixed:
-    out = ""
-    match unprefixed[d]["flags"]["C"]:
-        case "1":
-            out = "T"
-        case "0":
-            out = "F"
-        case "C":
-            out = "A"
-        case "-":
-            out = "B"
-        case other:
-            out = "AHHHH"
-    print(out, end=", ")
-    cnt += 1
-    if cnt % 16 == 0:
-        print()
-print("];")
+flag_table("ZERO_FLAG", "Z", False)
+flag_table("SUB_FLAG", "N", False)
+flag_table("HALF_FLAG", "H", False)
+flag_table("CARRY_FLAG", "C", False)
+flag_table("CB_ZERO_FLAG", "Z", True)
+flag_table("CB_SUB_FLAG", "N", True)
+flag_table("CB_HALF_FLAG", "H", True)
+flag_table("CB_CARRY_FLAG", "C", True)

@@ -337,7 +337,7 @@ impl CPU {
                         let val = self.fetch_byte();
                         self.arithmetic_eight(y, val, &mut flag_effects);
                     }
-                    _ => todo!(),
+                    _ => unreachable!(),
                 }
             }
             _ => unreachable!()
