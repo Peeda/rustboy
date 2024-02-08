@@ -1,3 +1,7 @@
+//TODO:
+//refactor reg tables to use references
+//enum ids from int
+//prefer into vs as
 use crate::tables::{FlagEffect, CLOCK, ALT_CLOCK, ZERO_FLAG, SUB_FLAG, HALF_FLAG, CARRY_FLAG};
 use bitflags::bitflags;
 const Z:usize = 0;
@@ -269,7 +273,7 @@ impl CPU {
                         match y {
                             0 => {
                                 //rlca
-                                flag_effects[C] = Some(self.regs.A & 1 << 7 > 0);
+                                flag_effects[C] = Some(self.regs.A & (1 << 7) > 0);
                                 self.regs.A = self.regs.A.rotate_left(1);
                             }
                             1 => {
@@ -332,6 +336,38 @@ impl CPU {
             3 => {
                 match z {
                     //immediate 8 bit arithmetic
+                    3 => {
+                        match y {
+                            1 => {
+                                //cb
+                                let next = self.fetch_byte();
+                                let x = (next & 0b11000000) >> 6;
+                                let y = (next & 0b00111000) >> 3;
+                                let z = next & 0b00000111;
+                                match x {
+                                    0 => {
+                                        self.bit_ops(y, z, &mut flag_effects);
+                                    }
+                                    1 => {
+                                        let val = self.read_r8(z);
+                                        flag_effects[Z] = Some(val & (1 << y) > 0);
+                                    }
+                                    2 => {
+                                        let mut val = self.read_r8(z);
+                                        val &= !(1 << y);
+                                        self.write_r8(z, val);
+                                    }
+                                    3 => {
+                                        let mut val = self.read_r8(z);
+                                        val |= 1 << y;
+                                        self.write_r8(z, val);
+                                    }
+                                    _ => unreachable!()
+                                }
+                            }
+                            _ => todo!()
+                        }
+                    }
                     1..=5 | 7 => todo!(),
                     6 => {
                         let val = self.fetch_byte();
@@ -384,6 +420,12 @@ impl CPU {
         } else {
             ALT_CLOCK[opcode as usize]
         }
+    }
+    fn bit_ops(&mut self, id:u8, reg:u8, flag_effects:&mut [Option<bool>;4]) {
+        match id {
+            _ => todo!()
+        }
+        flag_effects[Z] = Some(self.regs.A == 0);
     }
     fn arithmetic_eight(&mut self, id:u8, val:u8, flag_effects:&mut [Option<bool>;4]) {
         match id {
