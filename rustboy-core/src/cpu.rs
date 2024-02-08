@@ -1,7 +1,6 @@
 //TODO:
 //refactor reg tables to use references
 //enum ids from int
-//prefer into vs as
 use crate::tables::{FlagEffect, CLOCK, ALT_CLOCK, ZERO_FLAG, SUB_FLAG, HALF_FLAG, CARRY_FLAG};
 use bitflags::bitflags;
 const Z:usize = 0;
@@ -162,8 +161,8 @@ impl CPU {
                         match y {
                             0 => {},
                             1 => {
-                                let addr_lsb = self.fetch_byte() as u16;
-                                let addr_msb = self.fetch_byte() as u16;
+                                let addr_lsb:u16 = self.fetch_byte().into();
+                                let addr_msb:u16 = self.fetch_byte().into();
                                 let addr = addr_msb << 8 | addr_lsb;
                                 self.write_mem(addr, self.PC.to_le_bytes()[0]);
                                 self.write_mem(addr + 1, self.PC.to_le_bytes()[1]);
@@ -174,21 +173,21 @@ impl CPU {
                             }
                             3 => {
                                 //TODO: make an abstraction over jumping probably
-                                let shift = self.fetch_byte() as i8;
+                                let shift:i8 = self.fetch_byte().try_into().unwrap();
                                 if shift >= 0 {
-                                    self.PC = self.PC.wrapping_add(shift as u16);
+                                    self.PC = self.PC.wrapping_add(shift.try_into().unwrap());
                                 } else {
-                                    self.PC = self.PC.wrapping_sub((shift * -1) as u16);
+                                    self.PC = self.PC.wrapping_sub((shift * -1).try_into().unwrap());
                                 }
                             }
                             4..=7 => {
-                                let shift = self.fetch_byte() as i8;
+                                let shift:i8 = self.fetch_byte().try_into().unwrap();
                                 if self.check_cond(y - 4) {
                                     extra_cycles = Some(true);
                                     if shift >= 0 {
-                                        self.PC = self.PC.wrapping_add(shift as u16);
+                                        self.PC = self.PC.wrapping_add(shift.try_into().unwrap());
                                     } else {
-                                        self.PC = self.PC.wrapping_sub((shift * -1) as u16);
+                                        self.PC = self.PC.wrapping_sub((shift * -1).try_into().unwrap());
                                     }
                                 }
                             }
@@ -198,8 +197,8 @@ impl CPU {
                     1 => {
                         if q == 0 {
                             //16 bit immediate load
-                            let lsb = self.fetch_byte() as u16;
-                            let msb = self.fetch_byte() as u16;
+                            let lsb:u16 = self.fetch_byte().into();
+                            let msb:u16 = self.fetch_byte().into();
                             let val = msb << 8 | lsb;
                             self.write_r16(p, val);
                         } else if q == 1 {
