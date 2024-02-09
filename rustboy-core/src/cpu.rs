@@ -1,5 +1,5 @@
 //TODO:
-//refactor reg tables to use references
+//setup testing then refactor reg tables to use references
 //enum ids from int
 use crate::tables::{FlagEffect, CLOCK, ALT_CLOCK, ZERO_FLAG, SUB_FLAG, HALF_FLAG, CARRY_FLAG};
 use bitflags::bitflags;
@@ -21,6 +21,7 @@ pub struct CPU {
     regs:Registers,
     SP: u16,
     PC: u16,
+    ram: [u8; 0xffff],
 }
 impl CPU {
     fn fetch_byte(&mut self) -> u8 {
@@ -138,8 +139,11 @@ impl CPU {
             _ => panic!()
         }
     }
+    pub fn tick(&mut self) {
+        let opcode = self.fetch_byte();
+        self.execute(opcode);
+    }
     pub fn execute(&mut self, opcode: u8) -> u8 {
-        self.PC += 1;
         //bits 6 and 7
         let x = (opcode & 0b11000000) >> 6;
         //bits 3,4,5
@@ -466,10 +470,10 @@ impl CPU {
         flag_effects[Z] = Some(self.regs.A == 0);
     }
     fn read_mem(&self, addr:u16) -> u8 {
-        todo!()
+        self.ram[addr as usize]
     }
-    fn write_mem(&self, addr:u16, data:u8) {
-        todo!()
+    fn write_mem(&mut self, addr:u16, data:u8) {
+        self.ram[addr as usize] = data;
     }
 }
 impl Default for CPU {
@@ -478,6 +482,7 @@ impl Default for CPU {
             regs:Registers::default(),
             SP: 0xFFFE,
             PC: 0x0100,
+            ram: [0;0xffff],
         }
     }
 }
@@ -534,6 +539,54 @@ impl Default for Registers {
             E: 0xD8,
             H: 0x01,
             L: 0x4D,
+        }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::vec::Vec;
+    use json;
+    use crate::cpu::{CPU, GbFlags};
+    #[test]
+    fn jsmoo() {
+        let opcodes:Vec<u8> = (0x80..=0xBF).collect();
+        for opcode in opcodes {
+            let test_id = format!("{:x}", opcode);
+            let path = format!("test_data/jsmoo/{}.json", test_id);
+            let file_contents = fs::read_to_string(path).unwrap();
+            let contents = json::parse(&file_contents).unwrap();
+            for test in contents.members() {
+                let mut cpu = CPU::default();
+                let initial = test["initial"].clone();
+                let end = test["final"].clone();
+                cpu.regs.A = initial["a"].as_u8().unwrap();
+                cpu.regs.B = initial["b"].as_u8().unwrap();
+                cpu.regs.C = initial["c"].as_u8().unwrap();
+                cpu.regs.D = initial["d"].as_u8().unwrap();
+                cpu.regs.E = initial["e"].as_u8().unwrap();
+                cpu.regs.F = GbFlags::from_bits_retain(initial["f"].as_u8().unwrap());
+                cpu.regs.H = initial["h"].as_u8().unwrap();
+                cpu.regs.L = initial["l"].as_u8().unwrap();
+                cpu.PC = initial["pc"].as_u16().unwrap();
+                cpu.SP = initial["sp"].as_u16().unwrap();
+                for entry in initial["ram"].members() {
+                    cpu.write_mem(entry[0].as_u16().unwrap(), entry[1].as_u8().unwrap());
+                }
+                for _ in test["cycles"].members() {
+                    cpu.tick();
+                }
+                assert_eq!(cpu.regs.A, end["a"].as_u8().unwrap(), "failed {}", test["name"]);
+                assert_eq!(cpu.regs.B, end["b"].as_u8().unwrap(), "failed {}", test["name"]);
+                assert_eq!(cpu.regs.C, end["c"].as_u8().unwrap(), "failed {}", test["name"]);
+                assert_eq!(cpu.regs.D, end["d"].as_u8().unwrap(), "failed {}", test["name"]);
+                assert_eq!(cpu.regs.E, end["e"].as_u8().unwrap(), "failed {}", test["name"]);
+                //assert_eq!(cpu.regs.F.bits(), end["f"].as_u8().unwrap(), "failed {}", test["name"]);
+                for entry in end["ram"].members() {
+                    assert_eq!(cpu.read_mem(entry[0].as_u16().unwrap()), entry[1].as_u8().unwrap());
+                }
+                //println!("{} passed", test["name"]);
+            }
         }
     }
 }
