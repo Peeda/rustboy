@@ -591,10 +591,12 @@ mod tests {
                 assert_eq!(cpu.regs.D, end["d"].as_u8().unwrap(), "failed {}", test["name"]);
                 assert_eq!(cpu.regs.E, end["e"].as_u8().unwrap(), "failed {}", test["name"]);
                 assert_eq!(cpu.regs.F.bits(), end["f"].as_u8().unwrap(), "failed {}", test["name"]);
+                assert_eq!(cpu.regs.H, end["h"].as_u8().unwrap(), "failed {}", test["name"]);
+                assert_eq!(cpu.regs.L, end["l"].as_u8().unwrap(), "failed {}", test["name"]);
                 for entry in end["ram"].members() {
                     assert_eq!(cpu.read_mem(entry[0].as_u16().unwrap()), entry[1].as_u8().unwrap());
                 }
-                //println!("{} passed", test["name"]);
+                println!("{} passed", test["name"]);
             }
         }
     }
