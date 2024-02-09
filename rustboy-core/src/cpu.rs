@@ -106,8 +106,8 @@ impl CPU {
             _ => unreachable!()
         }
     }
-    fn set_flag(&mut self, i:u8, val:bool) {
-        match i {
+    fn set_flag(&mut self, id:u8, val:bool) {
+        match id {
             0 => {
                 if val {
                     self.regs.F |= GbFlags::Z;
@@ -392,7 +392,6 @@ impl CPU {
             match flag_effect {
                 FlagEffect::Set | FlagEffect::Unset => {
                     if flag_effects[i as usize].is_some() {
-                        eprintln!("{:X} doesn't need to provide flag {}",opcode,i);
                         let val = flag_effects[i as usize].unwrap();
                         if flag_effect == FlagEffect::Set {
                             assert!(val, "{:X} gave wrong flag {}",opcode,i);
@@ -407,8 +406,18 @@ impl CPU {
                     }
                 }
                 FlagEffect::NoEffect => {
-                    assert!(flag_effects[i as usize].is_none(), 
-                    "{:X} shouldn't modify flag {}", opcode, i);
+                    if flag_effects[i as usize].is_some() {
+                        let flag_type = match i {
+                            0 => GbFlags::Z,
+                            1 => GbFlags::N,
+                            2 => GbFlags::H,
+                            3 => GbFlags::C,
+                            _ => unreachable!()
+                        };
+                        assert_eq!(flag_effects[i as usize].unwrap(), 
+                        self.regs.F.contains(flag_type), "{:X} shouldn't modify
+                        and gave wrong flag {}", opcode, i);
+                    }
                 }
                 FlagEffect::Conditional => {
                     self.set_flag(i, flag_effects[i as usize].expect(
@@ -450,7 +459,7 @@ impl CPU {
             }
             3 => {
                 let carry = if self.regs.F.contains(GbFlags::C) {1} else {0};
-                flag_effects[H] = Some((self.regs.A & 0x0F) < (val & 0x0F + carry as u8));
+                flag_effects[H] = Some((self.regs.A & 0x0F) < ((val & 0x0F) + carry as u8));
                 flag_effects[C] = Some((self.regs.A as u16) < val as u16 + carry);
                 self.regs.A = self.regs.A.wrapping_sub(val).wrapping_sub(carry as u8);
             }
@@ -458,16 +467,16 @@ impl CPU {
             5 => self.regs.A ^= val,
             6 => self.regs.A |= val,
             7 => {
-                if self.regs.A < val {
-                    flag_effects[C] = Some(true);
-                }
-                if (self.regs.A & 0x0F) < (val & 0x0F) {
-                    flag_effects[H] = Some(true);
-                }
+                flag_effects[C] = Some(self.regs.A < val);
+                flag_effects[H] = Some((self.regs.A & 0x0F) < (val & 0x0F));
             }
             _ => unreachable!()
         }
-        flag_effects[Z] = Some(self.regs.A == 0);
+        if id != 7 {
+            flag_effects[Z] = Some(self.regs.A == 0);
+        } else {
+            flag_effects[Z] = Some(self.regs.A == val);
+        }
     }
     fn read_mem(&self, addr:u16) -> u8 {
         self.ram[addr as usize]
@@ -581,7 +590,7 @@ mod tests {
                 assert_eq!(cpu.regs.C, end["c"].as_u8().unwrap(), "failed {}", test["name"]);
                 assert_eq!(cpu.regs.D, end["d"].as_u8().unwrap(), "failed {}", test["name"]);
                 assert_eq!(cpu.regs.E, end["e"].as_u8().unwrap(), "failed {}", test["name"]);
-                //assert_eq!(cpu.regs.F.bits(), end["f"].as_u8().unwrap(), "failed {}", test["name"]);
+                assert_eq!(cpu.regs.F.bits(), end["f"].as_u8().unwrap(), "failed {}", test["name"]);
                 for entry in end["ram"].members() {
                     assert_eq!(cpu.read_mem(entry[0].as_u16().unwrap()), entry[1].as_u8().unwrap());
                 }
