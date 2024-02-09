@@ -3,6 +3,7 @@
 //enum ids from int
 use crate::tables::{FlagEffect, CLOCK, ALT_CLOCK, ZERO_FLAG, SUB_FLAG, HALF_FLAG, CARRY_FLAG};
 use bitflags::bitflags;
+//used to index into flag effect arrays
 const Z:usize = 0;
 const N:usize = 1;
 const H:usize = 2;
@@ -17,17 +18,88 @@ bitflags! {
     }
 }
 #[allow(non_snake_case)]
+struct Registers {
+    A: u8,
+    F: GbFlags,
+    B: u8,
+    C: u8,
+    D: u8,
+    E: u8,
+    H: u8,
+    L: u8,
+}
+macro_rules! read_16 {
+    ($name:ident, $high:ident, $low:ident) => {
+        fn $name(&self) -> u16 {
+            (self.$high as u16) << 8 | self.$low as u16
+        }
+    }
+}
+macro_rules! write_16 {
+    ($name:ident, $high:ident, $low:ident) => {
+        fn $name(&mut self, val: u16) {
+            self.$high = (val >> 8) as u8;
+            self.$low = (val & 0xFF) as u8;
+        }
+    }
+}
+impl Registers {
+    fn read_af(&self) -> u16 {
+        (self.A as u16) << 8 | self.F.bits() as u16
+    }
+    fn write_af(&mut self, val: u16) {
+        self.A = (val >> 8) as u8;
+        self.F = GbFlags::from_bits_retain((val & 0xFF) as u8);
+    }
+    read_16!(read_bc, B, C);
+    read_16!(read_de, D, E);
+    read_16!(read_hl, H, L);
+    write_16!(write_bc, B, C);
+    write_16!(write_de, D, E);
+    write_16!(write_hl, H, L);
+}
+impl Default for Registers {
+    fn default() -> Self {
+        Registers {
+            A: 0x01,
+            F: GbFlags::from_bits_retain(0xB0),
+            B: 0x00,
+            C: 0x13,
+            D: 0x00,
+            E: 0xD8,
+            H: 0x01,
+            L: 0x4D,
+        }
+    }
+}
+#[allow(non_snake_case)]
 pub struct CPU {
     regs:Registers,
     SP: u16,
     PC: u16,
     ram: [u8; 0xffff],
 }
+impl Default for CPU {
+    fn default() -> Self {
+        CPU {
+            regs:Registers::default(),
+            SP: 0xFFFE,
+            PC: 0x0100,
+            ram: [0;0xffff],
+        }
+    }
+}
 impl CPU {
     fn fetch_byte(&mut self) -> u8 {
         let val = self.read_mem(self.PC);
         self.PC += 1;
         val
+    }
+    fn read_mem(&self, addr:u16) -> u8 {
+        self.ram[addr as usize]
+    }
+    fn write_mem(&mut self, addr:u16, data:u8) {
+        self.ram[addr as usize] = data;
     }
     fn read_r8(&self, ind:u8) -> u8 {
         match ind {
@@ -478,79 +550,8 @@ impl CPU {
             flag_effects[Z] = Some(self.regs.A == val);
         }
     }
-    fn read_mem(&self, addr:u16) -> u8 {
-        self.ram[addr as usize]
-    }
-    fn write_mem(&mut self, addr:u16, data:u8) {
-        self.ram[addr as usize] = data;
-    }
-}
-impl Default for CPU {
-    fn default() -> Self {
-        CPU {
-            regs:Registers::default(),
-            SP: 0xFFFE,
-            PC: 0x0100,
-            ram: [0;0xffff],
-        }
-    }
 }
 
-#[allow(non_snake_case)]
-struct Registers {
-    A: u8,
-    F: GbFlags,
-    B: u8,
-    C: u8,
-    D: u8,
-    E: u8,
-    H: u8,
-    L: u8,
-}
-macro_rules! read_16 {
-    ($name:ident, $high:ident, $low:ident) => {
-        fn $name(&self) -> u16 {
-            (self.$high as u16) << 8 | self.$low as u16
-        }
-    }
-}
-macro_rules! write_16 {
-    ($name:ident, $high:ident, $low:ident) => {
-        fn $name(&mut self, val: u16) {
-            self.$high = (val >> 8) as u8;
-            self.$low = (val & 0xFF) as u8;
-        }
-    }
-}
-impl Registers {
-    fn read_af(&self) -> u16 {
-        (self.A as u16) << 8 | self.F.bits() as u16
-    }
-    fn write_af(&mut self, val: u16) {
-        self.A = (val >> 8) as u8;
-        self.F = GbFlags::from_bits_retain((val & 0xFF) as u8);
-    }
-    read_16!(read_bc, B, C);
-    read_16!(read_de, D, E);
-    read_16!(read_hl, H, L);
-    write_16!(write_bc, B, C);
-    write_16!(write_de, D, E);
-    write_16!(write_hl, H, L);
-}
-impl Default for Registers {
-    fn default() -> Self {
-        Registers {
-            A: 0x01,
-            F: GbFlags::from_bits_retain(0xB0),
-            B: 0x00,
-            C: 0x13,
-            D: 0x00,
-            E: 0xD8,
-            H: 0x01,
-            L: 0x4D,
-        }
-    }
-}
 #[cfg(test)]
 mod tests {
     use std::fs;
