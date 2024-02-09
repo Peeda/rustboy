@@ -215,6 +215,51 @@ impl CPU {
         let opcode = self.fetch_byte();
         self.execute(opcode);
     }
+    fn bit_ops(&mut self, id:u8, reg:u8, flag_effects:&mut [Option<bool>;4]) {
+        match id {
+            _ => todo!()
+        }
+        flag_effects[Z] = Some(self.regs.A == 0);
+    }
+    fn arithmetic_eight(&mut self, id:u8, val:u8, flag_effects:&mut [Option<bool>;4]) {
+        match id {
+            0 => {
+                flag_effects[H] = Some((self.regs.A & 0x0F) + (val & 0x0F) > 0x0F);
+                flag_effects[C] = Some(self.regs.A as u16 + val as u16 > u8::MAX.into());
+                self.regs.A = self.regs.A.wrapping_add(val);
+            }
+            1 => {
+                let carry = if self.regs.F.contains(GbFlags::C) {1} else {0};
+                flag_effects[H] = Some((self.regs.A & 0x0F) + (val & 0x0F) + carry as u8 > 0x0F);
+                flag_effects[C] = Some(self.regs.A as u16 + val as u16 + carry > u8::MAX.into());
+                self.regs.A = self.regs.A.wrapping_add(val).wrapping_add(carry as u8);
+            }
+            2 => {
+                flag_effects[H] = Some((self.regs.A & 0x0F) < (val & 0x0F));
+                flag_effects[C] = Some(self.regs.A < val);
+                self.regs.A = self.regs.A.wrapping_sub(val);
+            }
+            3 => {
+                let carry = if self.regs.F.contains(GbFlags::C) {1} else {0};
+                flag_effects[H] = Some((self.regs.A & 0x0F) < ((val & 0x0F) + carry as u8));
+                flag_effects[C] = Some((self.regs.A as u16) < val as u16 + carry);
+                self.regs.A = self.regs.A.wrapping_sub(val).wrapping_sub(carry as u8);
+            }
+            4 => self.regs.A &= val,
+            5 => self.regs.A ^= val,
+            6 => self.regs.A |= val,
+            7 => {
+                flag_effects[C] = Some(self.regs.A < val);
+                flag_effects[H] = Some((self.regs.A & 0x0F) < (val & 0x0F));
+            }
+            _ => unreachable!()
+        }
+        if id != 7 {
+            flag_effects[Z] = Some(self.regs.A == 0);
+        } else {
+            flag_effects[Z] = Some(self.regs.A == val);
+        }
+    }
     pub fn execute(&mut self, opcode: u8) -> u8 {
         //bits 6 and 7
         let x = (opcode & 0b11000000) >> 6;
@@ -503,51 +548,6 @@ impl CPU {
             CLOCK[opcode as usize]
         } else {
             ALT_CLOCK[opcode as usize]
-        }
-    }
-    fn bit_ops(&mut self, id:u8, reg:u8, flag_effects:&mut [Option<bool>;4]) {
-        match id {
-            _ => todo!()
-        }
-        flag_effects[Z] = Some(self.regs.A == 0);
-    }
-    fn arithmetic_eight(&mut self, id:u8, val:u8, flag_effects:&mut [Option<bool>;4]) {
-        match id {
-            0 => {
-                flag_effects[H] = Some((self.regs.A & 0x0F) + (val & 0x0F) > 0x0F);
-                flag_effects[C] = Some(self.regs.A as u16 + val as u16 > u8::MAX.into());
-                self.regs.A = self.regs.A.wrapping_add(val);
-            }
-            1 => {
-                let carry = if self.regs.F.contains(GbFlags::C) {1} else {0};
-                flag_effects[H] = Some((self.regs.A & 0x0F) + (val & 0x0F) + carry as u8 > 0x0F);
-                flag_effects[C] = Some(self.regs.A as u16 + val as u16 + carry > u8::MAX.into());
-                self.regs.A = self.regs.A.wrapping_add(val).wrapping_add(carry as u8);
-            }
-            2 => {
-                flag_effects[H] = Some((self.regs.A & 0x0F) < (val & 0x0F));
-                flag_effects[C] = Some(self.regs.A < val);
-                self.regs.A = self.regs.A.wrapping_sub(val);
-            }
-            3 => {
-                let carry = if self.regs.F.contains(GbFlags::C) {1} else {0};
-                flag_effects[H] = Some((self.regs.A & 0x0F) < ((val & 0x0F) + carry as u8));
-                flag_effects[C] = Some((self.regs.A as u16) < val as u16 + carry);
-                self.regs.A = self.regs.A.wrapping_sub(val).wrapping_sub(carry as u8);
-            }
-            4 => self.regs.A &= val,
-            5 => self.regs.A ^= val,
-            6 => self.regs.A |= val,
-            7 => {
-                flag_effects[C] = Some(self.regs.A < val);
-                flag_effects[H] = Some((self.regs.A & 0x0F) < (val & 0x0F));
-            }
-            _ => unreachable!()
-        }
-        if id != 7 {
-            flag_effects[Z] = Some(self.regs.A == 0);
-        } else {
-            flag_effects[Z] = Some(self.regs.A == val);
         }
     }
 }
