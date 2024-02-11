@@ -1,6 +1,3 @@
-//TODO:
-//setup testing then refactor reg tables to use references
-//enum ids from int
 use crate::tables::{FlagEffect, CLOCK, ALT_CLOCK, ZERO_FLAG, SUB_FLAG, HALF_FLAG, CARRY_FLAG};
 use bitflags::bitflags;
 //used to index into flag effect arrays
@@ -77,7 +74,8 @@ pub struct CPU {
     regs:Registers,
     SP: u16,
     PC: u16,
-    ram: [u8; 0xffff],
+    ram: [u8; 0xffff+1],
+    next_cb: bool,
 }
 impl Default for CPU {
     fn default() -> Self {
@@ -85,14 +83,15 @@ impl Default for CPU {
             regs:Registers::default(),
             SP: 0xFFFE,
             PC: 0x0100,
-            ram: [0;0xffff],
+            ram: [0;0xffff+1],
+            next_cb: false,
         }
     }
 }
 impl CPU {
     fn fetch_byte(&mut self) -> u8 {
         let val = self.read_mem(self.PC);
-        self.PC += 1;
+        self.PC = self.PC.wrapping_add(1);
         val
     }
     fn read_mem(&self, addr:u16) -> u8 {
@@ -213,7 +212,11 @@ impl CPU {
     }
     pub fn tick(&mut self) {
         let opcode = self.fetch_byte();
-        self.execute(opcode);
+        let prefixed = self.next_cb;
+        if self.next_cb {
+            self.next_cb = false;
+        }
+        self.execute(opcode, prefixed);
     }
     fn bit_ops(&mut self, id:u8, reg:u8, flag_effects:&mut [Option<bool>;4]) {
         match id {
@@ -260,7 +263,7 @@ impl CPU {
             flag_effects[Z] = Some(self.regs.A == val);
         }
     }
-    pub fn execute(&mut self, opcode: u8) -> u8 {
+    pub fn execute(&mut self, opcode: u8, prefixed:bool) -> u8 {
         //bits 6 and 7
         let x = (opcode & 0b11000000) >> 6;
         //bits 3,4,5
@@ -275,228 +278,228 @@ impl CPU {
         //Index in order ZNHC
         let mut flag_effects:[Option<bool>; 4] = [None,None,None,None];
         //based on https://gb-archive.github.io/salvage/decoding_gbz80_opcodes/Decoding%20Gamboy%20Z80%20Opcodes.html
-        match x {
-            0 => {
-                match z {
-                    0 => {
-                        match y {
-                            0 => {},
-                            1 => {
-                                let addr_lsb:u16 = self.fetch_byte().into();
-                                let addr_msb:u16 = self.fetch_byte().into();
-                                let addr = addr_msb << 8 | addr_lsb;
-                                self.write_mem(addr, self.PC.to_le_bytes()[0]);
-                                self.write_mem(addr + 1, self.PC.to_le_bytes()[1]);
-                            }
-                            2 => {
-                                //STOP
-                                todo!()
-                            }
-                            3 => {
-                                //TODO: make an abstraction over jumping probably
-                                let shift:i8 = self.fetch_byte().try_into().unwrap();
-                                if shift >= 0 {
-                                    self.PC = self.PC.wrapping_add(shift.try_into().unwrap());
-                                } else {
-                                    self.PC = self.PC.wrapping_sub((shift * -1).try_into().unwrap());
+        if self.next_cb {
+            match x {
+                0 => {
+                    self.bit_ops(y, z, &mut flag_effects);
+                }
+                1 => {
+                    let val = self.read_r8(z);
+                    flag_effects[Z] = Some(val & (1 << y) > 0);
+                }
+                2 => {
+                    let mut val = self.read_r8(z);
+                    val &= !(1 << y);
+                    self.write_r8(z, val);
+                }
+                3 => {
+                    let mut val = self.read_r8(z);
+                    val |= 1 << y;
+                    self.write_r8(z, val);
+                }
+                _ => unreachable!()
+            }
+        } else {
+            match x {
+                0 => {
+                    match z {
+                        0 => {
+                            match y {
+                                0 => {},
+                                1 => {
+                                    let addr_lsb:u16 = self.fetch_byte().into();
+                                    let addr_msb:u16 = self.fetch_byte().into();
+                                    let addr = addr_msb << 8 | addr_lsb;
+                                    self.write_mem(addr, self.PC.to_le_bytes()[0]);
+                                    self.write_mem(addr + 1, self.PC.to_le_bytes()[1]);
                                 }
-                            }
-                            4..=7 => {
-                                let shift:i8 = self.fetch_byte().try_into().unwrap();
-                                if self.check_cond(y - 4) {
-                                    extra_cycles = Some(true);
+                                2 => {
+                                    //STOP
+                                    todo!()
+                                }
+                                3 => {
+                                    //TODO: make an abstraction over jumping probably
+                                    let shift:i8 = self.fetch_byte().try_into().unwrap();
                                     if shift >= 0 {
                                         self.PC = self.PC.wrapping_add(shift.try_into().unwrap());
                                     } else {
                                         self.PC = self.PC.wrapping_sub((shift * -1).try_into().unwrap());
                                     }
                                 }
-                            }
-                            _ => unreachable!()
-                        }
-                    }
-                    1 => {
-                        if q == 0 {
-                            //16 bit immediate load
-                            let lsb:u16 = self.fetch_byte().into();
-                            let msb:u16 = self.fetch_byte().into();
-                            let val = msb << 8 | lsb;
-                            self.write_r16(p, val);
-                        } else if q == 1 {
-                            //16 bit add
-                            let val = self.read_r16(p);
-                            flag_effects[H] = Some((self.regs.read_hl() & 0xFFF) + (val & 0xFFF) > 0xFFF);
-                            flag_effects[C] = Some(self.regs.read_hl() as u32 + val as u32 > u16::MAX.into());
-                            self.regs.write_hl(self.regs.read_hl().wrapping_add(val));
-                        } else {unreachable!()}
-                    }
-                    2 => {
-                        match (q,p) {
-                            (0,0) => {
-                                self.write_mem(self.regs.read_bc(), self.regs.A);
-                            }
-                            (0,1) => {
-                                self.write_mem(self.regs.read_de(), self.regs.A);
-                            }
-                            (0,2) => {
-                                self.write_mem(self.regs.read_hl(), self.regs.A);
-                                self.regs.write_hl(self.regs.read_hl().wrapping_add(1));
-                            }
-                            (0,3) => {
-                                self.write_mem(self.regs.read_hl(), self.regs.A);
-                                self.regs.write_hl(self.regs.read_hl().wrapping_sub(1));
-                            }
-                            (1,0) => {
-                                self.regs.A = self.read_mem(self.regs.read_bc());
-                            }
-                            (1,1) => {
-                                self.regs.A = self.read_mem(self.regs.read_de());
-                            }
-                            (1,2) => {
-                                self.regs.A = self.read_mem(self.regs.read_hl());
-                                self.regs.write_hl(self.regs.read_hl().wrapping_add(1));
-                            }
-                            (1,3) => {
-                                self.regs.A = self.read_mem(self.regs.read_hl());
-                                self.regs.write_hl(self.regs.read_hl().wrapping_sub(1));
-                            }
-                            _ => unreachable!()
-                        }
-                    }
-                    3 => {
-                        if q == 0 {
-                            //16 bit inc
-                            self.write_r16(p, self.read_r16(p).wrapping_add(1));
-                        } else if q == 1 {
-                            //16 bit dec
-                            self.write_r16(p, self.read_r16(p).wrapping_sub(1));
-                        } else {unreachable!()}
-                    }
-                    4 => {
-                        //8 bit inc
-                        flag_effects[H] = Some((self.read_r8(y) & 0x0F) + 1 > 0x0F);
-                        self.write_r8(y, self.read_r8(y).wrapping_add(1));
-                        flag_effects[Z] = Some(self.regs.A == 0);
-                    }
-                    5 => {
-                        //8 bit dec
-                        flag_effects[H] = Some(self.read_r8(y) & 0x0F == 0);
-                        self.write_r8(y, self.read_r8(y).wrapping_sub(1));
-                        flag_effects[Z] = Some(self.regs.A == 0);
-                    }
-                    6 => {
-                        //immediate load r8
-                        let val = self.fetch_byte();
-                        self.write_r8(y, val);
-                    }
-                    7 => {
-                        match y {
-                            0 => {
-                                //rlca
-                                flag_effects[C] = Some(self.regs.A & (1 << 7) > 0);
-                                self.regs.A = self.regs.A.rotate_left(1);
-                            }
-                            1 => {
-                                //rrca
-                                flag_effects[C] = Some(self.regs.A & 1 > 0);
-                                self.regs.A = self.regs.A.rotate_right(1);
-                            }
-                            2 => {
-                                //rla
-                                let carry = self.regs.F.contains(GbFlags::C);
-                                flag_effects[C] = Some(self.regs.A & 1 << 7 > 0);
-                                self.regs.A <<= 1;
-                                if carry {
-                                    self.regs.A |= 1;
-                                } else {
-                                    self.regs.A &= !1;
+                                4..=7 => {
+                                    let shift:i8 = self.fetch_byte().try_into().unwrap();
+                                    if self.check_cond(y - 4) {
+                                        extra_cycles = Some(true);
+                                        if shift >= 0 {
+                                            self.PC = self.PC.wrapping_add(shift.try_into().unwrap());
+                                        } else {
+                                            self.PC = self.PC.wrapping_sub((shift * -1).try_into().unwrap());
+                                        }
+                                    }
                                 }
+                                _ => unreachable!()
                             }
-                            3 => {
-                                //rra
-                                let carry = self.regs.F.contains(GbFlags::C);
-                                flag_effects[C] = Some(self.regs.A & 1 > 0);
-                                self.regs.A >>= 1;
-                                if carry {
-                                    self.regs.A |= 1 << 7;
-                                } else {
-                                    self.regs.A &= !(1 << 7);
-                                }
-                            }
-                            4 => {
-                                //daa
-                                todo!()
-                            }
-                            5 => {
-                                //cpl
-                                self.regs.A = !self.regs.A;
-                            }
-                            6 => {
-                                //scf
-                            }
-                            7 => {
-                                //ccf
-                                flag_effects[C] = Some(!self.regs.F.contains(GbFlags::C));
-                            }
-                            _ => unreachable!()
                         }
-                    }
-                    _ => unreachable!()
-                }
-            }
-            1 => {
-                //8 bit LD from register
-                if !(y == 7 && z == 7) {
-                    self.write_r8(y, self.read_r8(z));
-                }
-            }
-            2 => {
-                self.arithmetic_eight(y, self.read_r8(z), &mut flag_effects);
-            }
-            3 => {
-                match z {
-                    //immediate 8 bit arithmetic
-                    3 => {
-                        match y {
-                            1 => {
-                                //cb
-                                let next = self.fetch_byte();
-                                let x = (next & 0b11000000) >> 6;
-                                let y = (next & 0b00111000) >> 3;
-                                let z = next & 0b00000111;
-                                match x {
-                                    0 => {
-                                        self.bit_ops(y, z, &mut flag_effects);
-                                    }
-                                    1 => {
-                                        let val = self.read_r8(z);
-                                        flag_effects[Z] = Some(val & (1 << y) > 0);
-                                    }
-                                    2 => {
-                                        let mut val = self.read_r8(z);
-                                        val &= !(1 << y);
-                                        self.write_r8(z, val);
-                                    }
-                                    3 => {
-                                        let mut val = self.read_r8(z);
-                                        val |= 1 << y;
-                                        self.write_r8(z, val);
-                                    }
-                                    _ => unreachable!()
-                                }
-                            }
-                            _ => todo!()
+                        1 => {
+                            if q == 0 {
+                                //16 bit immediate load
+                                let lsb:u16 = self.fetch_byte().into();
+                                let msb:u16 = self.fetch_byte().into();
+                                let val = msb << 8 | lsb;
+                                self.write_r16(p, val);
+                            } else if q == 1 {
+                                //16 bit add
+                                let val = self.read_r16(p);
+                                flag_effects[H] = Some((self.regs.read_hl() & 0xFFF) + (val & 0xFFF) > 0xFFF);
+                                flag_effects[C] = Some(self.regs.read_hl() as u32 + val as u32 > u16::MAX.into());
+                                self.regs.write_hl(self.regs.read_hl().wrapping_add(val));
+                            } else {unreachable!()}
                         }
+                        2 => {
+                            match (q,p) {
+                                (0,0) => {
+                                    self.write_mem(self.regs.read_bc(), self.regs.A);
+                                }
+                                (0,1) => {
+                                    self.write_mem(self.regs.read_de(), self.regs.A);
+                                }
+                                (0,2) => {
+                                    self.write_mem(self.regs.read_hl(), self.regs.A);
+                                    self.regs.write_hl(self.regs.read_hl().wrapping_add(1));
+                                }
+                                (0,3) => {
+                                    self.write_mem(self.regs.read_hl(), self.regs.A);
+                                    self.regs.write_hl(self.regs.read_hl().wrapping_sub(1));
+                                }
+                                (1,0) => {
+                                    self.regs.A = self.read_mem(self.regs.read_bc());
+                                }
+                                (1,1) => {
+                                    self.regs.A = self.read_mem(self.regs.read_de());
+                                }
+                                (1,2) => {
+                                    self.regs.A = self.read_mem(self.regs.read_hl());
+                                    self.regs.write_hl(self.regs.read_hl().wrapping_add(1));
+                                }
+                                (1,3) => {
+                                    self.regs.A = self.read_mem(self.regs.read_hl());
+                                    self.regs.write_hl(self.regs.read_hl().wrapping_sub(1));
+                                }
+                                _ => unreachable!()
+                            }
+                        }
+                        3 => {
+                            if q == 0 {
+                                //16 bit inc
+                                self.write_r16(p, self.read_r16(p).wrapping_add(1));
+                            } else if q == 1 {
+                                //16 bit dec
+                                self.write_r16(p, self.read_r16(p).wrapping_sub(1));
+                            } else {unreachable!()}
+                        }
+                        4 => {
+                            //8 bit inc
+                            flag_effects[H] = Some((self.read_r8(y) & 0x0F) + 1 > 0x0F);
+                            self.write_r8(y, self.read_r8(y).wrapping_add(1));
+                            flag_effects[Z] = Some(self.regs.A == 0);
+                        }
+                        5 => {
+                            //8 bit dec
+                            flag_effects[H] = Some(self.read_r8(y) & 0x0F == 0);
+                            self.write_r8(y, self.read_r8(y).wrapping_sub(1));
+                            flag_effects[Z] = Some(self.regs.A == 0);
+                        }
+                        6 => {
+                            //immediate load r8
+                            let val = self.fetch_byte();
+                            self.write_r8(y, val);
+                        }
+                        7 => {
+                            match y {
+                                0 => {
+                                    //rlca
+                                    flag_effects[C] = Some(self.regs.A & (1 << 7) > 0);
+                                    self.regs.A = self.regs.A.rotate_left(1);
+                                }
+                                1 => {
+                                    //rrca
+                                    flag_effects[C] = Some(self.regs.A & 1 > 0);
+                                    self.regs.A = self.regs.A.rotate_right(1);
+                                }
+                                2 => {
+                                    //rla
+                                    let carry = self.regs.F.contains(GbFlags::C);
+                                    flag_effects[C] = Some(self.regs.A & 1 << 7 > 0);
+                                    self.regs.A <<= 1;
+                                    if carry {
+                                        self.regs.A |= 1;
+                                    } else {
+                                        self.regs.A &= !1;
+                                    }
+                                }
+                                3 => {
+                                    //rra
+                                    let carry = self.regs.F.contains(GbFlags::C);
+                                    flag_effects[C] = Some(self.regs.A & 1 > 0);
+                                    self.regs.A >>= 1;
+                                    if carry {
+                                        self.regs.A |= 1 << 7;
+                                    } else {
+                                        self.regs.A &= !(1 << 7);
+                                    }
+                                }
+                                4 => {
+                                    //daa
+                                    todo!()
+                                }
+                                5 => {
+                                    //cpl
+                                    self.regs.A = !self.regs.A;
+                                }
+                                6 => {
+                                    //scf
+                                }
+                                7 => {
+                                    //ccf
+                                    flag_effects[C] = Some(!self.regs.F.contains(GbFlags::C));
+                                }
+                                _ => unreachable!()
+                            }
+                        }
+                        _ => unreachable!()
                     }
-                    1..=5 | 7 => todo!(),
-                    6 => {
-                        let val = self.fetch_byte();
-                        self.arithmetic_eight(y, val, &mut flag_effects);
-                    }
-                    _ => unreachable!(),
                 }
+                1 => {
+                    //8 bit LD from register
+                    if !(y == 7 && z == 7) {
+                        self.write_r8(y, self.read_r8(z));
+                    }
+                }
+                2 => {
+                    self.arithmetic_eight(y, self.read_r8(z), &mut flag_effects);
+                }
+                3 => {
+                    match z {
+                        //immediate 8 bit arithmetic
+                        3 => {
+                            match y {
+                                1 => {
+                                    //cb
+                                    self.next_cb = true;
+                                }
+                                _ => todo!()
+                            }
+                        }
+                        1..=5 | 7 => todo!(),
+                        6 => {
+                            let val = self.fetch_byte();
+                            self.arithmetic_eight(y, val, &mut flag_effects);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                _ => unreachable!()
             }
-            _ => unreachable!()
         }
         for i in 0..4 {
             let flag_effect = match i {
@@ -560,7 +563,7 @@ mod tests {
     use crate::cpu::{CPU, GbFlags};
     #[test]
     fn jsmoo() {
-        let opcodes:Vec<u8> = (0x80..=0xBF).collect();
+        let opcodes:Vec<u8> = (0x40..=0xBF).collect();
         for opcode in opcodes {
             let test_id = format!("{:x}", opcode);
             let path = format!("test_data/jsmoo/{}.json", test_id);
