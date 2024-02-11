@@ -1,4 +1,4 @@
-use crate::tables::{FlagEffect, CLOCK, ALT_CLOCK, ZERO_FLAG, SUB_FLAG, HALF_FLAG, CARRY_FLAG};
+use crate::tables::*;
 use bitflags::bitflags;
 //used to index into flag effect arrays
 const Z:usize = 0;
@@ -212,11 +212,7 @@ impl CPU {
     }
     pub fn tick(&mut self) {
         let opcode = self.fetch_byte();
-        let prefixed = self.next_cb;
-        if self.next_cb {
-            self.next_cb = false;
-        }
-        self.execute(opcode, prefixed);
+        self.execute(opcode);
     }
     fn bit_ops(&mut self, id:u8, reg:u8, flag_effects:&mut [Option<bool>;4]) {
         match id {
@@ -263,7 +259,9 @@ impl CPU {
             flag_effects[Z] = Some(self.regs.A == val);
         }
     }
-    pub fn execute(&mut self, opcode: u8, prefixed:bool) -> u8 {
+    pub fn execute(&mut self, opcode: u8) -> u8 {
+        let prefixed: bool = self.next_cb;
+        self.next_cb = false;
         //bits 6 and 7
         let x = (opcode & 0b11000000) >> 6;
         //bits 3,4,5
@@ -278,14 +276,14 @@ impl CPU {
         //Index in order ZNHC
         let mut flag_effects:[Option<bool>; 4] = [None,None,None,None];
         //based on https://gb-archive.github.io/salvage/decoding_gbz80_opcodes/Decoding%20Gamboy%20Z80%20Opcodes.html
-        if self.next_cb {
+        if prefixed {
             match x {
                 0 => {
                     self.bit_ops(y, z, &mut flag_effects);
                 }
                 1 => {
                     let val = self.read_r8(z);
-                    flag_effects[Z] = Some(val & (1 << y) > 0);
+                    flag_effects[Z] = Some(val & (1 << y) == 0);
                 }
                 2 => {
                     let mut val = self.read_r8(z);
@@ -502,11 +500,15 @@ impl CPU {
             }
         }
         for i in 0..4 {
-            let flag_effect = match i {
-                0 => ZERO_FLAG[opcode as usize],
-                1 => SUB_FLAG[opcode as usize],
-                2 => HALF_FLAG[opcode as usize],
-                3 => CARRY_FLAG[opcode as usize],
+            let flag_effect = match (i, prefixed) {
+                (0, false) => ZERO_FLAG[opcode as usize],
+                (1, false) => SUB_FLAG[opcode as usize],
+                (2, false) => HALF_FLAG[opcode as usize],
+                (3, false) => CARRY_FLAG[opcode as usize],
+                (0, true) => CB_ZERO_FLAG[opcode as usize],
+                (1, true) => CB_SUB_FLAG[opcode as usize],
+                (2, true) => CB_HALF_FLAG[opcode as usize],
+                (3, true) => CB_CARRY_FLAG[opcode as usize],
                 _ => unreachable!()
             };
             match flag_effect {
@@ -514,9 +516,9 @@ impl CPU {
                     if flag_effects[i as usize].is_some() {
                         let val = flag_effects[i as usize].unwrap();
                         if flag_effect == FlagEffect::Set {
-                            assert!(val, "{:X} gave wrong flag {}",opcode,i);
+                            assert!(val, "{:X} gave wrong flag {}, prefixed: {}",opcode,i, prefixed);
                         } else {
-                            assert!(!val, "{:X} gave wrong flag {}",opcode,i);
+                            assert!(!val, "{:X} gave wrong flag {}, prefixed: {}",opcode,i, prefixed);
                         }
                     }
                     if flag_effect == FlagEffect::Set {
@@ -536,21 +538,25 @@ impl CPU {
                         };
                         assert_eq!(flag_effects[i as usize].unwrap(), 
                         self.regs.F.contains(flag_type), "{:X} shouldn't modify
-                        and gave wrong flag {}", opcode, i);
+                        and gave wrong flag {}, prefixed: {}", opcode, i, prefixed);
                     }
                 }
                 FlagEffect::Conditional => {
                     self.set_flag(i, flag_effects[i as usize].expect(
-                        format!("{:X} didn't modify flag {}",opcode,i).as_str()
+                        format!("{:X} didn't modify flag {}, prefixed: {}",opcode,i, prefixed).as_str()
                     ));
                 }
             }
         }
-        if ALT_CLOCK[opcode as usize] == 0 || !extra_cycles.expect(format!(
-        "{:X} didn't provide extra cycles condition",opcode).as_str()) {
-            CLOCK[opcode as usize]
+        if prefixed {
+            CB_CLOCK[opcode as usize]
         } else {
-            ALT_CLOCK[opcode as usize]
+            if ALT_CLOCK[opcode as usize] == 0 || !extra_cycles.expect(format!(
+            "{:X} didn't provide extra cycles condition",opcode).as_str()) {
+                CLOCK[opcode as usize]
+            } else {
+                ALT_CLOCK[opcode as usize]
+            }
         }
     }
 }
