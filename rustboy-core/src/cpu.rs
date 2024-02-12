@@ -94,11 +94,28 @@ impl CPU {
         self.PC = self.PC.wrapping_add(1);
         val
     }
+    //abstract over read/write for later bus
     fn read_mem(&self, addr:u16) -> u8 {
         self.ram[addr as usize]
     }
     fn write_mem(&mut self, addr:u16, data:u8) {
         self.ram[addr as usize] = data;
+    }
+    fn borrow_mem(&mut self, addr:u16) -> &mut u8 {
+        &mut self.ram[addr as usize]
+    }
+    fn borrow_r8(&mut self, ind:u8) -> &mut u8 {
+        match ind {
+            0 => &mut self.regs.B,
+            1 => &mut self.regs.C,
+            2 => &mut self.regs.D,
+            3 => &mut self.regs.E,
+            4 => &mut self.regs.H,
+            5 => &mut self.regs.L,
+            6 => self.borrow_mem(self.regs.read_hl()),
+            7 => &mut self.regs.A,
+            _ => panic!("Invalid index")
+        }
     }
     fn read_r8(&self, ind:u8) -> u8 {
         match ind {
@@ -214,12 +231,6 @@ impl CPU {
         let opcode = self.fetch_byte();
         self.execute(opcode);
     }
-    fn bit_ops(&mut self, id:u8, reg:u8, flag_effects:&mut [Option<bool>;4]) {
-        match id {
-            _ => todo!()
-        }
-        flag_effects[Z] = Some(self.regs.A == 0);
-    }
     fn arithmetic_eight(&mut self, id:u8, val:u8, flag_effects:&mut [Option<bool>;4]) {
         match id {
             0 => {
@@ -279,7 +290,59 @@ impl CPU {
         if prefixed {
             match x {
                 0 => {
-                    self.bit_ops(y, z, &mut flag_effects);
+                    //rotate operation y with register z
+                    match y {
+                        0 => {
+                            //RLC
+                            flag_effects[C] = Some(*self.borrow_r8(z) & (1 << 7) > 0);
+                            *self.borrow_r8(z) = self.borrow_r8(z).rotate_left(1);
+                        }
+                        1 => {
+                            //RRC
+                            flag_effects[C] = Some(*self.borrow_r8(z) & 1 > 0);
+                            *self.borrow_r8(z) = self.borrow_r8(z).rotate_right(1);
+                        }
+                        2 => {
+                            //RL
+                            let carry = self.regs.F.contains(GbFlags::C);
+                            flag_effects[C] = Some(*self.borrow_r8(z) & 1 << 7 > 0);
+                            *self.borrow_r8(z) <<= 1;
+                            if carry {
+                                *self.borrow_r8(z) |= 1;
+                            } else {
+                                *self.borrow_r8(z) &= !1;
+                            }
+                        }
+                        3 => {
+                            //RR
+                            let carry = self.regs.F.contains(GbFlags::C);
+                            flag_effects[C] = Some(*self.borrow_r8(z) & 1 > 0);
+                            *self.borrow_r8(z) >>= 1;
+                            if carry {
+                                *self.borrow_r8(z) |= 1 << 7;
+                            } else {
+                                *self.borrow_r8(z) &= !(1 << 7);
+                            }
+                        }
+                        4 => {
+                            //SLA
+
+                        }
+                        5 => {
+                            //SRA
+
+                        }
+                        6 => {
+                            //SWAP
+
+                        }
+                        7 => {
+                            //SRL
+
+                        }
+                        _ => unreachable!()
+                    }
+                    flag_effects[Z] = Some(*self.borrow_r8(z) == 0);
                 }
                 1 => {
                     let val = self.read_r8(z);
@@ -569,10 +632,16 @@ mod tests {
     use crate::cpu::{CPU, GbFlags};
     #[test]
     fn jsmoo() {
-        let opcodes:Vec<u8> = (0x40..=0xBF).collect();
+        //let opcodes:Vec<u8> = (0x40..=0xBF).collect();
+        let opcodes:Vec<u8> = (0x00..=0x1F).collect();
+        let cb = true;
         for opcode in opcodes {
-            let test_id = format!("{:x}", opcode);
-            let path = format!("test_data/jsmoo/{}.json", test_id);
+            let test_id = format!("{:02x}", opcode);
+            let path = if cb {
+                format!("test_data/jsmoo/cb {}.json", test_id)
+            } else {
+                format!("test_data/jsmoo/{}.json", test_id)
+            };
             let file_contents = fs::read_to_string(path).unwrap();
             let contents = json::parse(&file_contents).unwrap();
             for test in contents.members() {
