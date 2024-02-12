@@ -287,80 +287,7 @@ impl CPU {
         //Index in order ZNHC
         let mut flag_effects:[Option<bool>; 4] = [None,None,None,None];
         //based on https://gb-archive.github.io/salvage/decoding_gbz80_opcodes/Decoding%20Gamboy%20Z80%20Opcodes.html
-        if prefixed {
-            match x {
-                0 => {
-                    //rotate operation y with register z
-                    match y {
-                        0 => {
-                            //RLC
-                            flag_effects[C] = Some(*self.borrow_r8(z) & (1 << 7) > 0);
-                            *self.borrow_r8(z) = self.borrow_r8(z).rotate_left(1);
-                        }
-                        1 => {
-                            //RRC
-                            flag_effects[C] = Some(*self.borrow_r8(z) & 1 > 0);
-                            *self.borrow_r8(z) = self.borrow_r8(z).rotate_right(1);
-                        }
-                        2 => {
-                            //RL
-                            let carry = self.regs.F.contains(GbFlags::C);
-                            flag_effects[C] = Some(*self.borrow_r8(z) & 1 << 7 > 0);
-                            *self.borrow_r8(z) <<= 1;
-                            if carry {
-                                *self.borrow_r8(z) |= 1;
-                            } else {
-                                *self.borrow_r8(z) &= !1;
-                            }
-                        }
-                        3 => {
-                            //RR
-                            let carry = self.regs.F.contains(GbFlags::C);
-                            flag_effects[C] = Some(*self.borrow_r8(z) & 1 > 0);
-                            *self.borrow_r8(z) >>= 1;
-                            if carry {
-                                *self.borrow_r8(z) |= 1 << 7;
-                            } else {
-                                *self.borrow_r8(z) &= !(1 << 7);
-                            }
-                        }
-                        4 => {
-                            //SLA
-
-                        }
-                        5 => {
-                            //SRA
-
-                        }
-                        6 => {
-                            //SWAP
-
-                        }
-                        7 => {
-                            //SRL
-
-                        }
-                        _ => unreachable!()
-                    }
-                    flag_effects[Z] = Some(*self.borrow_r8(z) == 0);
-                }
-                1 => {
-                    let val = self.read_r8(z);
-                    flag_effects[Z] = Some(val & (1 << y) == 0);
-                }
-                2 => {
-                    let mut val = self.read_r8(z);
-                    val &= !(1 << y);
-                    self.write_r8(z, val);
-                }
-                3 => {
-                    let mut val = self.read_r8(z);
-                    val |= 1 << y;
-                    self.write_r8(z, val);
-                }
-                _ => unreachable!()
-            }
-        } else {
+        if !prefixed {
             match x {
                 0 => {
                     match z {
@@ -561,6 +488,87 @@ impl CPU {
                 }
                 _ => unreachable!()
             }
+        } else {
+            match x {
+                0 => {
+                    //rotate operation y with register z
+                    match y {
+                        0 => {
+                            //RLC
+                            flag_effects[C] = Some(*self.borrow_r8(z) & (1 << 7) > 0);
+                            *self.borrow_r8(z) = self.borrow_r8(z).rotate_left(1);
+                        }
+                        1 => {
+                            //RRC
+                            flag_effects[C] = Some(*self.borrow_r8(z) & 1 > 0);
+                            *self.borrow_r8(z) = self.borrow_r8(z).rotate_right(1);
+                        }
+                        2 => {
+                            //RL
+                            let carry = self.regs.F.contains(GbFlags::C);
+                            flag_effects[C] = Some(*self.borrow_r8(z) & 1 << 7 > 0);
+                            *self.borrow_r8(z) <<= 1;
+                            if carry {
+                                *self.borrow_r8(z) |= 1;
+                            } else {
+                                *self.borrow_r8(z) &= !1;
+                            }
+                        }
+                        3 => {
+                            //RR
+                            let carry = self.regs.F.contains(GbFlags::C);
+                            flag_effects[C] = Some(*self.borrow_r8(z) & 1 > 0);
+                            *self.borrow_r8(z) >>= 1;
+                            if carry {
+                                *self.borrow_r8(z) |= 1 << 7;
+                            } else {
+                                *self.borrow_r8(z) &= !(1 << 7);
+                            }
+                        }
+                        4 => {
+                            //SLA
+                            flag_effects[C] = Some(*self.borrow_r8(z) & (1 << 7) > 0);
+                            *self.borrow_r8(z) <<= 1;
+                        }
+                        5 => {
+                            //SRA
+                            flag_effects[C] = Some(*self.borrow_r8(z) & 1 > 0);
+                            let temp = *self.borrow_r8(z) & (1 << 7);
+                            *self.borrow_r8(z) >>= 1;
+                            *self.borrow_r8(z) |= temp;
+                        }
+                        6 => {
+                            //SWAP
+                            let reg = self.borrow_r8(z);
+                            let low_nibble = *reg & 0xF;
+                            *reg >>= 4;
+                            *reg |= low_nibble << 4;
+                        }
+                        7 => {
+                            //SRL
+                            flag_effects[C] = Some(*self.borrow_r8(z) & 1 > 0);
+                            *self.borrow_r8(z) >>= 1;
+                        }
+                        _ => unreachable!()
+                    }
+                    flag_effects[Z] = Some(*self.borrow_r8(z) == 0);
+                }
+                1 => {
+                    let val = self.read_r8(z);
+                    flag_effects[Z] = Some(val & (1 << y) == 0);
+                }
+                2 => {
+                    let mut val = self.read_r8(z);
+                    val &= !(1 << y);
+                    self.write_r8(z, val);
+                }
+                3 => {
+                    let mut val = self.read_r8(z);
+                    val |= 1 << y;
+                    self.write_r8(z, val);
+                }
+                _ => unreachable!()
+            }
         }
         for i in 0..4 {
             let flag_effect = match (i, prefixed) {
@@ -632,10 +640,11 @@ mod tests {
     use crate::cpu::{CPU, GbFlags};
     #[test]
     fn jsmoo() {
-        //let opcodes:Vec<u8> = (0x40..=0xBF).collect();
-        let opcodes:Vec<u8> = (0x00..=0x1F).collect();
-        let cb = true;
-        for opcode in opcodes {
+        let unprefixed = 0x40..=0xBF;
+        let prefixed = 0x00..=0xFF;
+        let opcodes:Vec<(u8,bool)> = (unprefixed.map(|x| (x, false)))
+            .chain(prefixed.map(|x| (x,true))).collect();
+        for (opcode, cb) in opcodes {
             let test_id = format!("{:02x}", opcode);
             let path = if cb {
                 format!("test_data/jsmoo/cb {}.json", test_id)
