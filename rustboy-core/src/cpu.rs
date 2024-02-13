@@ -339,6 +339,8 @@ impl CPU {
                                         } else {
                                             self.PC = self.PC.wrapping_sub((shift * -1).try_into().unwrap());
                                         }
+                                    } else {
+                                        extra_cycles = Some(false);
                                     }
                                 }
                                 _ => unreachable!()
@@ -482,17 +484,39 @@ impl CPU {
                 }
                 3 => {
                     match z {
-                        //immediate 8 bit arithmetic
+                        0..=2 => todo!(),
                         3 => {
                             match y {
+                                0 => {
+                                    self.PC = self.fetch_u16();
+                                }
                                 1 => {
                                     //cb
                                     self.next_cb = true;
                                 }
-                                _ => todo!()
+                                2..=5 => panic!("Invalid opcode {:X}", opcode),
+                                //DI
+                                6 => todo!(),
+                                //EI
+                                7 => todo!(),
+                                _ => unreachable!()
                             }
                         }
-                        1..=4 => todo!(),
+                        4 => {
+                            match y {
+                                0..=3 => {
+                                    let addr = self.fetch_u16();
+                                    if self.check_cond(y) {
+                                        extra_cycles = Some(true);
+                                        self.call(addr);
+                                    } else {
+                                        extra_cycles = Some(false);
+                                    }
+                                }
+                                4..=7 => panic!("Invalid opcode {:X}", opcode),
+                                _ => unreachable!()
+                            }
+                        }
                         5 => {
                             match q {
                                 0 => {
@@ -513,6 +537,7 @@ impl CPU {
                             }
                         }
                         6 => {
+                            //immediate 8 bit arithmetic
                             let val = self.fetch_byte();
                             self.arithmetic_eight(y, val, &mut flag_effects);
                         }
