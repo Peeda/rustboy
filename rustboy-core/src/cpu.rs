@@ -44,10 +44,6 @@ impl Registers {
     fn read_af(&self) -> u16 {
         (self.A as u16) << 8 | self.F.bits() as u16
     }
-    fn write_af(&mut self, val: u16) {
-        self.A = (val >> 8) as u8;
-        self.F = GbFlags::from_bits_retain((val & 0xFF) as u8);
-    }
     read_16!(read_bc, B, C);
     read_16!(read_de, D, E);
     read_16!(read_hl, H, L);
@@ -107,14 +103,20 @@ impl CPU {
     fn fetch_u16(&mut self) -> u16 {
         let lsb:u16 = self.fetch_byte().into();
         let msb:u16 = self.fetch_byte().into();
-        let val = msb << 8 | lsb;
-        val
+        msb << 8 | lsb
     }
     fn push_stack(&mut self, val:u16) {
         self.SP = self.SP.wrapping_sub(1);
         self.write_mem(self.SP, val.to_le_bytes()[1]);
         self.SP = self.SP.wrapping_sub(1);
         self.write_mem(self.SP, val.to_le_bytes()[0]);
+    }
+    fn pop_stack(&mut self) -> u16 {
+        let lsb:u16 = self.read_mem(self.SP).into();
+        self.SP = self.SP.wrapping_add(1);
+        let msb:u16 = self.read_mem(self.SP).into();
+        self.SP = self.SP.wrapping_add(1);
+        msb << 8 | lsb
     }
     fn call(&mut self, addr:u16) {
         self.push_stack(self.PC);
@@ -162,14 +164,17 @@ impl CPU {
     fn read_r16(&self, ind:u8) -> u16 {
         self.helper_read_r16(ind, true)
     }
-    fn write_r16(&mut self, ind:u8, val:u16) {
-        self.helper_write_r16(ind, val, true);
+    fn write_r16_sp(&mut self, ind:u8, val:u16) {
+        match ind {
+            0 => self.regs.write_bc(val),
+            1 => self.regs.write_de(val),
+            2 => self.regs.write_hl(val),
+            3 => self.SP = val,
+            _ => unreachable!()
+        }
     }
     fn read_r16_sp(&self, ind:u8) -> u16 {
         self.helper_read_r16(ind, false)
-    }
-    fn write_r16_sp(&mut self, ind:u8, val:u16) {
-        self.helper_write_r16(ind, val, false);
     }
     fn helper_read_r16(&self, ind:u8, variant:bool) -> u16 {
         match ind {
@@ -181,21 +186,6 @@ impl CPU {
                     self.SP
                 } else {
                     self.regs.read_af()
-                }
-            }
-            _ => unreachable!()
-        }
-    }
-    fn helper_write_r16(&mut self, ind:u8, val:u16, variant:bool) {
-        match ind {
-            0 => self.regs.write_bc(val),
-            1 => self.regs.write_de(val),
-            2 => self.regs.write_hl(val),
-            3 => {
-                if variant {
-                    self.SP = val;
-                } else {
-                    self.regs.write_af(val);
                 }
             }
             _ => unreachable!()
@@ -323,7 +313,9 @@ impl CPU {
                                 }
                                 3 => {
                                     //TODO: make an abstraction over jumping probably
-                                    let shift:i8 = self.fetch_byte().try_into().unwrap();
+                                    let shift = unsafe {
+                                        std::mem::transmute::<u8,i8>(self.fetch_byte())
+                                    };
                                     if shift >= 0 {
                                         self.PC = self.PC.wrapping_add(shift.try_into().unwrap());
                                     } else {
@@ -484,7 +476,91 @@ impl CPU {
                 }
                 3 => {
                     match z {
-                        0..=1 => todo!(),
+                        0 => {
+                            match y {
+                                0..=3 => {
+                                    if self.check_cond(y) {
+                                        extra_cycles = Some(true);
+                                        let addr = self.pop_stack();
+                                        self.PC = addr;
+                                    } else {
+                                        extra_cycles = Some(false);
+                                    }
+                                }
+                                4 => {
+                                    let offset:u16 = self.fetch_byte().into();
+                                    self.write_mem(0xFF00 + offset, self.regs.A);
+                                }
+                                5 => {
+                                    let shift = unsafe {
+                                        std::mem::transmute::<u8,i8>(self.fetch_byte())
+                                    };
+                                    if shift >= 0 {
+                                        let val:u16 = shift.try_into().unwrap();
+                                        flag_effects[C] = Some((self.PC & 0xFF) + val > u8::MAX.into());
+                                        flag_effects[H] = Some((self.PC & 0x0F) + val > 0x0F_u16);
+                                        self.SP = self.SP.wrapping_add(val);
+                                    } else {
+                                        let val:u16 = (shift * -1).try_into().unwrap();
+                                        self.SP = self.SP.wrapping_sub(val);
+                                    }
+                                }
+                                6 => {
+                                    let offset:u16 = self.fetch_byte().into();
+                                    self.regs.A = self.read_mem(0xFF00 + offset);
+                                }
+                                7 => {
+                                    let shift = unsafe {
+                                        std::mem::transmute::<u8,i8>(self.fetch_byte())
+                                    };
+                                    if shift >= 0 {
+                                        let val:u16 = shift.try_into().unwrap();
+                                        flag_effects[C] = Some((self.PC & 0xFF) + val > u8::MAX.into());
+                                        flag_effects[H] = Some((self.PC & 0x0F) + val > 0x0F_u16);
+                                        self.regs.write_hl(self.SP.wrapping_add(val));
+                                    } else {
+                                        let val:u16 = (shift * -1).try_into().unwrap();
+                                        self.regs.write_hl(self.SP.wrapping_sub(val));
+                                    }
+                                }
+                                _ => unreachable!()
+                            }
+                        }
+                        1 => {
+                            match q {
+                                0 => {
+                                    let val = self.pop_stack();
+                                    if opcode != 0xF1 {
+                                        assert!(p != 3);
+                                        self.write_r16_sp(p, val);
+                                    } else {
+                                        self.regs.A = ((val & 0xFF00) >> 8).try_into().unwrap();
+                                        flag_effects[Z] = Some(val & (1 << 7) > 0);
+                                        flag_effects[N] = Some(val & (1 << 6) > 0);
+                                        flag_effects[H] = Some(val & (1 << 5) > 0);
+                                        flag_effects[C] = Some(val & (1 << 4) > 0);
+                                    }
+                                }
+                                1 => {
+                                    match p {
+                                        0 => {
+                                            let addr = self.pop_stack();
+                                            self.PC = addr;
+                                        }
+                                        1 => {
+                                            let addr = self.pop_stack();
+                                            self.PC = addr;
+                                            todo!()
+                                            //TODO: interrupts
+                                        }
+                                        2 => self.PC = self.regs.read_hl(),
+                                        3 => self.SP = self.regs.read_hl(),
+                                        _ => unreachable!()
+                                    }
+                                }
+                                _ => unreachable!()
+                            }
+                        }
                         2 => {
                             match y {
                                 0..=3 => {
@@ -506,7 +582,8 @@ impl CPU {
                                     self.regs.A = self.read_mem(0xFF00 + self.regs.C as u16);
                                 }
                                 7 => {
-                                    self.regs.A = self.read_mem(self.fetch_u16());
+                                    let addr = self.fetch_u16();
+                                    self.regs.A = self.read_mem(addr);
                                 }
                                 _ => unreachable!()
                             }
