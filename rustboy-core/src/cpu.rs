@@ -1,3 +1,7 @@
+//TODO: 
+//halt and stop behavior
+//daa
+//interrupts
 use crate::tables::*;
 use bitflags::bitflags;
 //used to index into flag effect arrays
@@ -118,7 +122,7 @@ impl CPU {
     }
     fn call(&mut self, addr:u16) {
         self.push_stack(self.PC);
-        self.SP = addr;
+        self.PC = addr;
     }
     fn borrow_r8(&mut self, ind:u8) -> &mut u8 {
         match ind {
@@ -160,7 +164,7 @@ impl CPU {
         }
     }
     fn read_r16(&self, ind:u8) -> u16 {
-        self.helper_read_r16(ind, true)
+        self.helper_read_r16(ind, false)
     }
     fn write_r16_sp(&mut self, ind:u8, val:u16) {
         match ind {
@@ -172,7 +176,7 @@ impl CPU {
         }
     }
     fn read_r16_sp(&self, ind:u8) -> u16 {
-        self.helper_read_r16(ind, false)
+        self.helper_read_r16(ind, true)
     }
     fn helper_read_r16(&self, ind:u8, variant:bool) -> u16 {
         match ind {
@@ -316,11 +320,13 @@ impl CPU {
                                 if shift >= 0 {
                                     self.PC = self.PC.wrapping_add(shift.try_into().unwrap());
                                 } else {
-                                    self.PC = self.PC.wrapping_sub((shift * -1).try_into().unwrap());
+                                    self.PC = self.PC.wrapping_sub((shift as i16 * -1).try_into().unwrap());
                                 }
                             }
                             4..=7 => {
-                                let shift:i8 = self.fetch_byte().try_into().unwrap();
+                                let shift = unsafe {
+                                    std::mem::transmute::<u8,i8>(self.fetch_byte())
+                                };
                                 if self.check_cond(y - 4) {
                                     extra_cycles = Some(true);
                                     if shift >= 0 {
@@ -489,16 +495,17 @@ impl CPU {
                                 self.write_mem(0xFF00 + offset, self.regs.A);
                             }
                             5 => {
+                                let next = self.fetch_byte();
+                                flag_effects[C] = Some((self.SP & 0xFF) + next as u16 > u8::MAX.into());
+                                flag_effects[H] = Some((self.SP & 0x0F) + (next & 0x0F) as u16 > 0x0F_u16);
                                 let shift = unsafe {
-                                    std::mem::transmute::<u8,i8>(self.fetch_byte())
+                                    std::mem::transmute::<u8,i8>(next)
                                 };
                                 if shift >= 0 {
                                     let val:u16 = shift.try_into().unwrap();
-                                    flag_effects[C] = Some((self.PC & 0xFF) + val > u8::MAX.into());
-                                    flag_effects[H] = Some((self.PC & 0x0F) + val > 0x0F_u16);
                                     self.SP = self.SP.wrapping_add(val);
                                 } else {
-                                    let val:u16 = (shift * -1).try_into().unwrap();
+                                    let val:u16 = (shift as i16 * -1).try_into().unwrap();
                                     self.SP = self.SP.wrapping_sub(val);
                                 }
                             }
@@ -507,16 +514,17 @@ impl CPU {
                                 self.regs.A = self.read_mem(0xFF00 + offset);
                             }
                             7 => {
+                                let next = self.fetch_byte();
                                 let shift = unsafe {
-                                    std::mem::transmute::<u8,i8>(self.fetch_byte())
+                                    std::mem::transmute::<u8,i8>(next)
                                 };
+                                flag_effects[C] = Some((self.SP & 0xFF) + next as u16 > u8::MAX.into());
+                                flag_effects[H] = Some((self.SP & 0x0F) + (next & 0x0F) as u16 > 0x0F_u16);
                                 if shift >= 0 {
                                     let val:u16 = shift.try_into().unwrap();
-                                    flag_effects[C] = Some((self.PC & 0xFF) + val > u8::MAX.into());
-                                    flag_effects[H] = Some((self.PC & 0x0F) + val > 0x0F_u16);
                                     self.regs.write_hl(self.SP.wrapping_add(val));
                                 } else {
-                                    let val:u16 = (shift * -1).try_into().unwrap();
+                                    let val:u16 = (shift as i16 * -1).try_into().unwrap();
                                     self.regs.write_hl(self.SP.wrapping_sub(val));
                                 }
                             }
@@ -547,7 +555,7 @@ impl CPU {
                                     1 => {
                                         let addr = self.pop_stack();
                                         self.PC = addr;
-                                        todo!()
+                                        //TODO: put an interrupt here
                                     }
                                     2 => self.PC = self.regs.read_hl(),
                                     3 => self.SP = self.regs.read_hl(),
@@ -560,9 +568,10 @@ impl CPU {
                     2 => {
                         match y {
                             0..=3 => {
+                                let addr = self.fetch_u16();
                                 if self.check_cond(y) {
                                     extra_cycles = Some(true);
-                                    self.PC = self.fetch_u16();
+                                    self.PC = addr;
                                 } else {
                                     extra_cycles = Some(false);
                                 }
@@ -804,10 +813,15 @@ mod tests {
     use crate::cpu::{CPU, GbFlags};
     #[test]
     fn jsmoo() {
-        let exclude = vec![0xD3, 0xDB, 0xDD, 0xE3, 0xE4, 0xEB, 0xEC, 0xED, 0xF4, 0xFC, 0xFD];
-        let unprefixed = 0..=0;
-        //let unprefixed = 0x40..=0xBF;
-        //let unprefixed = 0xC0..=0xFF;
+        //illegal opcodes
+        let mut exclude = vec![0xD3, 0xDB, 0xDD, 0xE3, 0xE4, 0xEB, 0xEC, 0xED, 0xF4, 0xFC, 0xFD];
+        //halt
+        exclude.push(0x76);
+        exclude.push(0xCB);
+        //ei and di
+        exclude.push(0xF3);
+        exclude.push(0xFB);
+        let unprefixed = 0x40..=0xFF;
         let prefixed = 0x00..=0xFF;
         let opcodes:Vec<(u8,bool)> = (unprefixed.filter(|x| !exclude.contains(x)).map(|x| (x, false)))
             .chain(prefixed.map(|x| (x,true))).collect();
@@ -858,7 +872,8 @@ mod tests {
                 assert_eq!(cpu.PC, end["pc"].as_u16().unwrap(), "failed {}", test["name"]);
                 assert_eq!(cpu.SP, end["sp"].as_u16().unwrap(), "failed {}", test["name"]);
                 for entry in end["ram"].members() {
-                    assert_eq!(cpu.read_mem(entry[0].as_u16().unwrap()), entry[1].as_u8().unwrap());
+                    assert_eq!(cpu.read_mem(entry[0].as_u16().unwrap()), entry[1].as_u8().unwrap(),
+                    "failed {}", test["name"]);
                 }
                 println!("{} passed", test["name"]);
             }
