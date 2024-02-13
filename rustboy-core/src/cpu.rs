@@ -484,7 +484,33 @@ impl CPU {
                 }
                 3 => {
                     match z {
-                        0..=2 => todo!(),
+                        0..=1 => todo!(),
+                        2 => {
+                            match y {
+                                0..=3 => {
+                                    if self.check_cond(y) {
+                                        extra_cycles = Some(true);
+                                        self.PC = self.fetch_u16();
+                                    } else {
+                                        extra_cycles = Some(false);
+                                    }
+                                }
+                                4 => {
+                                    self.write_mem(0xFF00 + self.regs.C as u16, self.regs.A);
+                                }
+                                5 => {
+                                    let addr = self.fetch_u16();
+                                    self.write_mem(addr, self.regs.A);
+                                }
+                                6 => {
+                                    self.regs.A = self.read_mem(0xFF00 + self.regs.C as u16);
+                                }
+                                7 => {
+                                    self.regs.A = self.read_mem(self.fetch_u16());
+                                }
+                                _ => unreachable!()
+                            }
+                        }
                         3 => {
                             match y {
                                 0 => {
