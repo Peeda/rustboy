@@ -89,11 +89,6 @@ impl Default for CPU {
     }
 }
 impl CPU {
-    fn fetch_byte(&mut self) -> u8 {
-        let val = self.read_mem(self.PC);
-        self.PC = self.PC.wrapping_add(1);
-        val
-    }
     //abstract over read/write for later bus
     fn read_mem(&self, addr:u16) -> u8 {
         self.ram[addr as usize]
@@ -103,6 +98,27 @@ impl CPU {
     }
     fn borrow_mem(&mut self, addr:u16) -> &mut u8 {
         &mut self.ram[addr as usize]
+    }
+    fn fetch_byte(&mut self) -> u8 {
+        let val = self.read_mem(self.PC);
+        self.PC = self.PC.wrapping_add(1);
+        val
+    }
+    fn fetch_u16(&mut self) -> u16 {
+        let lsb:u16 = self.fetch_byte().into();
+        let msb:u16 = self.fetch_byte().into();
+        let val = msb << 8 | lsb;
+        val
+    }
+    fn push_stack(&mut self, val:u16) {
+        self.SP = self.SP.wrapping_sub(1);
+        self.write_mem(self.SP, val.to_le_bytes()[1]);
+        self.SP = self.SP.wrapping_sub(1);
+        self.write_mem(self.SP, val.to_le_bytes()[0]);
+    }
+    fn call(&mut self, addr:u16) {
+        self.push_stack(self.PC);
+        self.SP = addr;
     }
     fn borrow_r8(&mut self, ind:u8) -> &mut u8 {
         match ind {
@@ -303,7 +319,7 @@ impl CPU {
                                 }
                                 2 => {
                                     //STOP
-                                    todo!()
+                                    _ = self.fetch_byte()
                                 }
                                 3 => {
                                     //TODO: make an abstraction over jumping probably
@@ -331,13 +347,11 @@ impl CPU {
                         1 => {
                             if q == 0 {
                                 //16 bit immediate load
-                                let lsb:u16 = self.fetch_byte().into();
-                                let msb:u16 = self.fetch_byte().into();
-                                let val = msb << 8 | lsb;
-                                self.write_r16(p, val);
+                                let val = self.fetch_u16();
+                                self.write_r16_sp(p, val);
                             } else if q == 1 {
                                 //16 bit add
-                                let val = self.read_r16(p);
+                                let val = self.read_r16_sp(p);
                                 flag_effects[H] = Some((self.regs.read_hl() & 0xFFF) + (val & 0xFFF) > 0xFFF);
                                 flag_effects[C] = Some(self.regs.read_hl() as u32 + val as u32 > u16::MAX.into());
                                 self.regs.write_hl(self.regs.read_hl().wrapping_add(val));
@@ -379,10 +393,10 @@ impl CPU {
                         3 => {
                             if q == 0 {
                                 //16 bit inc
-                                self.write_r16(p, self.read_r16(p).wrapping_add(1));
+                                self.write_r16_sp(p, self.read_r16_sp(p).wrapping_add(1));
                             } else if q == 1 {
                                 //16 bit dec
-                                self.write_r16(p, self.read_r16(p).wrapping_sub(1));
+                                self.write_r16_sp(p, self.read_r16_sp(p).wrapping_sub(1));
                             } else {unreachable!()}
                         }
                         4 => {
@@ -478,10 +492,33 @@ impl CPU {
                                 _ => todo!()
                             }
                         }
-                        1..=5 | 7 => todo!(),
+                        1..=4 => todo!(),
+                        5 => {
+                            match q {
+                                0 => {
+                                    let val = self.read_r16(p);
+                                    self.push_stack(val);
+                                }
+                                1 => {
+                                    match p {
+                                        0 => {
+                                            let addr = self.fetch_u16();
+                                            self.call(addr);
+                                        }
+                                        1..=3 => panic!("Invalid opcode {:X}", opcode),
+                                        _ => unreachable!()
+                                    }
+                                }
+                                _ => unreachable!()
+                            }
+                        }
                         6 => {
                             let val = self.fetch_byte();
                             self.arithmetic_eight(y, val, &mut flag_effects);
+                        }
+                        7 => {
+                            let addr = (y as u16) << 3;
+                            self.call(addr);
                         }
                         _ => unreachable!(),
                     }
