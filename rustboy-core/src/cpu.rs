@@ -1,6 +1,5 @@
 //TODO: 
 //halt and stop behavior
-//daa
 //interrupts
 use crate::tables::*;
 use bitflags::bitflags;
@@ -449,7 +448,25 @@ impl CPU {
                             }
                             4 => {
                                 //daa
-                                todo!()
+                                let mut offset = 0;
+                                if (!self.regs.F.contains(GbFlags::N) && self.regs.A & 0xF > 0x9) 
+                                || self.regs.F.contains(GbFlags::H) {
+                                    offset |= 0x06;
+                                }
+                                if (!self.regs.F.contains(GbFlags::N) && self.regs.A > 0x99)
+                                || self.regs.F.contains(GbFlags::C) {
+                                    offset |= 0x60;
+                                    flag_effects[C] = Some(true);
+                                } else {
+                                    flag_effects[C] = Some(false);
+                                }
+                                if self.regs.F.contains(GbFlags::N) {
+                                    self.regs.A = self.regs.A.wrapping_sub(offset);
+                                } else {
+                                    self.regs.A = self.regs.A.wrapping_add(offset);
+                                }
+                                flag_effects[Z] = Some(self.regs.A == 0);
+                                flag_effects[H] = Some(false);
                             }
                             5 => {
                                 //cpl
@@ -821,7 +838,7 @@ mod tests {
         //ei and di
         exclude.push(0xF3);
         exclude.push(0xFB);
-        let unprefixed = 0x40..=0xFF;
+        let unprefixed = 0x00..=0xFF;
         let prefixed = 0x00..=0xFF;
         let opcodes:Vec<(u8,bool)> = (unprefixed.filter(|x| !exclude.contains(x)).map(|x| (x, false)))
             .chain(prefixed.map(|x| (x,true))).collect();

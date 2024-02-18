@@ -1,11 +1,19 @@
-pub struct MMU {
+pub trait Mem {
+    fn read(&self, addr:u16) -> u8;
+    fn write(&mut self, addr:u16, val:u8);
+    fn borrow_mem(&mut self, addr:u16);
+}
+pub struct FlatMem {
+    rom: [u8; 0x10000]
+}
+pub struct Bus {
     rom: [u8; 0x8000],
     vram: [u8; 0x2000],
     eram: [u8; 0x2000],
     wram: [u8; 0x2000],
 }
-impl MMU {
-    pub fn read(&self, addr:u16) -> u8 {
+impl Mem for Bus {
+    fn read(&self, addr:u16) -> u8 {
         match addr {
             0..=0x7FFF => {
                 self.rom[addr as usize]
@@ -40,5 +48,11 @@ impl MMU {
                 todo!()
             }
         }
+    }
+    fn write(&mut self, addr:u16, val:u8) {
+        todo!();
+    }
+    fn borrow_mem(&mut self, addr:u16) {
+        todo!();
     }
 }
