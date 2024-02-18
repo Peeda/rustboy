@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
 
-members = [
+members = [ "debug-view",
     "rustboy-core"
 ]
