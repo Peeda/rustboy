@@ -305,8 +305,8 @@ impl CPU {
                                 let addr_lsb:u16 = self.fetch_byte().into();
                                 let addr_msb:u16 = self.fetch_byte().into();
                                 let addr = addr_msb << 8 | addr_lsb;
-                                self.write_mem(addr, self.PC.to_le_bytes()[0]);
-                                self.write_mem(addr + 1, self.PC.to_le_bytes()[1]);
+                                self.write_mem(addr, self.SP.to_le_bytes()[0]);
+                                self.write_mem(addr + 1, self.SP.to_le_bytes()[1]);
                             }
                             2 => {
                                 //STOP
@@ -331,7 +331,7 @@ impl CPU {
                                     if shift >= 0 {
                                         self.PC = self.PC.wrapping_add(shift.try_into().unwrap());
                                     } else {
-                                        self.PC = self.PC.wrapping_sub((shift * -1).try_into().unwrap());
+                                        self.PC = self.PC.wrapping_sub((shift as i16 * -1).try_into().unwrap());
                                     }
                                 } else {
                                     extra_cycles = Some(false);
@@ -399,13 +399,15 @@ impl CPU {
                         //8 bit inc
                         flag_effects[H] = Some((self.read_r8(y) & 0x0F) + 1 > 0x0F);
                         self.write_r8(y, self.read_r8(y).wrapping_add(1));
-                        flag_effects[Z] = Some(self.regs.A == 0);
+                        flag_effects[Z] = Some(self.read_r8(y) == 0);
+                        flag_effects[N] = Some(false);
                     }
                     5 => {
                         //8 bit dec
                         flag_effects[H] = Some(self.read_r8(y) & 0x0F == 0);
                         self.write_r8(y, self.read_r8(y).wrapping_sub(1));
-                        flag_effects[Z] = Some(self.regs.A == 0);
+                        flag_effects[Z] = Some(self.read_r8(y) == 0);
+                        flag_effects[N] = Some(true);
                     }
                     6 => {
                         //immediate load r8
@@ -834,10 +836,13 @@ mod tests {
         let mut exclude = vec![0xD3, 0xDB, 0xDD, 0xE3, 0xE4, 0xEB, 0xEC, 0xED, 0xF4, 0xFC, 0xFD];
         //halt
         exclude.push(0x76);
+        //prefix
         exclude.push(0xCB);
         //ei and di
         exclude.push(0xF3);
         exclude.push(0xFB);
+        //stop
+        exclude.push(0x10);
         let unprefixed = 0x00..=0xFF;
         let prefixed = 0x00..=0xFF;
         let opcodes:Vec<(u8,bool)> = (unprefixed.filter(|x| !exclude.contains(x)).map(|x| (x, false)))
