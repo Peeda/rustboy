@@ -419,9 +419,9 @@ fn write_tile(tile: &[u8], buffer: &mut [u32]) {
         let col = 7 - i%8;
         buffer[i] = match (merged[row] & (0x03 << col * 2)) >> col * 2 {
             0b00 => 0xff000000,
-            0b01 => 0xffff0000,
-            0b10 => 0xff00ff00,
-            0b11 => 0xff0000ff,
+            0b01 => 0xff555555,
+            0b10 => 0xffaaaaaa,
+            0b11 => 0xffffffff,
             _ => unreachable!()
         }
     }

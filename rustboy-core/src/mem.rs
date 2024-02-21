@@ -1,10 +1,28 @@
 pub trait Mem {
     fn read(&self, addr:u16) -> u8;
     fn write(&mut self, addr:u16, val:u8);
-    fn borrow_mem(&mut self, addr:u16);
+    fn borrow_mem(&mut self, addr:u16) -> &mut u8;
 }
 pub struct FlatMem {
-    rom: [u8; 0x10000]
+    ram: [u8; 0x10000]
+}
+impl Default for FlatMem {
+    fn default() -> Self {
+        FlatMem {
+            ram: [0; 0x10000]
+        }
+    }
+}
+impl Mem for FlatMem {
+    fn read(&self, addr:u16) -> u8 {
+        self.ram[addr as usize]
+    }
+    fn write(&mut self, addr:u16, data:u8) {
+        self.ram[addr as usize] = data;
+    }
+    fn borrow_mem(&mut self, addr:u16) -> &mut u8 {
+        &mut self.ram[addr as usize]
+    }
 }
 pub struct Bus {
     rom: [u8; 0x8000],
@@ -52,7 +70,7 @@ impl Mem for Bus {
     fn write(&mut self, addr:u16, val:u8) {
         todo!();
     }
-    fn borrow_mem(&mut self, addr:u16) {
+    fn borrow_mem(&mut self, addr:u16) -> &mut u8 {
         todo!();
     }
 }

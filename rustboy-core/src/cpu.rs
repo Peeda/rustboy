@@ -2,6 +2,7 @@
 //halt and stop behavior
 //interrupts
 use crate::tables::*;
+use crate::mem::{Mem,FlatMem};
 use bitflags::bitflags;
 //used to index into flag effect arrays
 const Z:usize = 0;
@@ -73,7 +74,7 @@ pub struct CPU {
     regs:Registers,
     SP: u16,
     PC: u16,
-    ram: [u8; 0xffff+1],
+    mem: Box<dyn Mem>,
 }
 impl Default for CPU {
     fn default() -> Self {
@@ -81,20 +82,20 @@ impl Default for CPU {
             regs:Registers::default(),
             SP: 0xFFFE,
             PC: 0x0100,
-            ram: [0;0xffff+1],
+            mem: Box::new(FlatMem::default()),
         }
     }
 }
 impl CPU {
     //abstract over read/write for later bus
     fn read_mem(&self, addr:u16) -> u8 {
-        self.ram[addr as usize]
+        self.mem.read(addr)
     }
     fn write_mem(&mut self, addr:u16, data:u8) {
-        self.ram[addr as usize] = data;
+        self.mem.write(addr, data);
     }
     fn borrow_mem(&mut self, addr:u16) -> &mut u8 {
-        &mut self.ram[addr as usize]
+        self.mem.borrow_mem(addr)
     }
     fn fetch_byte(&mut self) -> u8 {
         let val = self.read_mem(self.PC);
