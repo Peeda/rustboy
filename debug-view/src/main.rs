@@ -1,5 +1,6 @@
 use raylib::prelude::*;
 use std::vec::Vec;
+use rustboy_core;
 
 const DATA: [u8; 0x1800] = [
     0x07, 0x00, 0x0B, 0x07, 0x1B, 0x04, 0x3F, 0x13, 0x3F, 0x14, 0x3F, 0x10, 0x67, 0x18, 0xFF, 0x4D, 
@@ -428,7 +429,7 @@ fn write_tile(tile: &[u8], buffer: &mut [u32]) {
 }
 fn main() {
     let (mut rl, thread) = raylib::init()
-        .size(640, 480)
+        .size(1280, 760)
         .title("Hello, World")
         .build();
      
