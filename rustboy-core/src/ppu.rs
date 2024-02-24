@@ -91,7 +91,6 @@ impl Buffer {
                 self.set_pixel(y_loc, x_loc, color);
             }
         }
-        println!("{y}, {x}");
     }
 }
 impl PPU {
@@ -158,35 +157,39 @@ impl PPU {
         }
     }
     pub fn debug_tiles(&self) -> [u32; 8 * 8 * 384] {
-        todo!();
-        //let mut out = [0; 8 * 8 * 384];
-        //let bus = self.bus.borrow();
-        ////$8000 - $97FF
-        //let mut i:u16 = 0x8000;
-        //while i <= 0x97FF {
-        //    let mut merged:[u16; 8] = [0; 8];
-        //    for k in 0..8 {
-        //        merged[k as usize] = spread(bus.read(i + 2*k)) | ((spread(bus.read(i + 2*k + 1)) << 1));
-        //    }
-        //    let iterations:u16 = (i - 0x8000) / 16;
-        //    write_tile((iterations/16) as u8, (iterations % 16) as u8, 0b11100100, &merged, &mut out[..]);
-        //    i += 16;
-        //}
-        //out
+        let mut out = Buffer::init(24 * 8, 16 * 8);
+        let bus = self.bus.borrow();
+        //$8000 - $97FF
+        let mut i:u16 = 0x8000;
+        while i <= 0x97FF {
+            let mut merged:[u16; 8] = [0; 8];
+            for k in 0..8 {
+                merged[k as usize] = spread(bus.read(i + 2*k)) | ((spread(bus.read(i + 2*k + 1)) << 1));
+            }
+            let iterations:u16 = (i - 0x8000) / 16;
+            out.write_tile((iterations/24) as u8, (iterations % 24) as u8, 0b00011011, &merged);
+            i += 16;
+        }
+        out.data.try_into().expect("wrong size.")
     }
-    pub fn calculate_bg_tilemap(&self) -> [u32; MAP_PIXEL_SIZE as usize] {
+    pub fn calculate_tilemap(&self, background: bool) -> [u32; MAP_PIXEL_SIZE as usize] {
         let mut buffer = Buffer::init(MAP_PIXEL_LEN, MAP_PIXEL_LEN);
         let bus = self.bus.borrow();
         //I'm just gonna calculate the whole tile map for now
         let lcdc = LCDC::from_bits(bus.read(LCDC_ADDR)).unwrap();
-        let bg_addr = if lcdc.contains(LCDC::BG_MAP_ADDR) {
+        let addr_choice = if background {
+            lcdc.contains(LCDC::BG_MAP_ADDR)
+        } else {
+            lcdc.contains(LCDC::WIN_MAP_ADDR)
+        };
+        let map_addr = if addr_choice {
             0x9C00
         } else {
             0x9800
         };
         for y in 0..MAP_WIDTH {
             for x in 0..MAP_WIDTH {
-                let tile_ind = bus.read(bg_addr + y * MAP_WIDTH + x);
+                let tile_ind = bus.read(map_addr + y * MAP_WIDTH + x);
                 //account for addressing mode, get start of 16 byte tile
                 let tile_loc = match tile_ind {
                     0..=127 => {
