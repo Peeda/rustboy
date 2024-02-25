@@ -19,39 +19,42 @@ fn main() {
     let bus = Rc::new(RefCell::new(mem));
     let ppu = PPU::init(bus);
 
-    let tile_data = {
+    let mut tile_data = {
         let img = Image::gen_image_color(24*8, 16*8, Color::PURPLE);
-        let mut tex = rl.load_texture_from_image(&thread, &img).unwrap();
-        let tile_buffer = ppu.debug_tiles();
-        unsafe {
-            tex.update_texture(&std::mem::transmute::<[u32;24576], [u8;98304]>(tile_buffer));
-        }
+        let tex = rl.load_texture_from_image(&thread, &img).unwrap();
         tex
     };
-    let bg_map = {
-        let buffer = ppu.calculate_tilemap(true);
+    let mut bg_map = {
         let img = Image::gen_image_color(256, 256, Color::PURPLE);
-        let mut tex = rl.load_texture_from_image(&thread, &img).unwrap();
-        unsafe {
-            tex.update_texture(&std::mem::transmute::<[u32;65536], [u8;262144]>(buffer));
-        }
+        let tex = rl.load_texture_from_image(&thread, &img).unwrap();
         tex
     };
-    let window = {
-        let buffer = ppu.calculate_tilemap(false);
+    let mut window = {
         let img = Image::gen_image_color(256, 256, Color::PURPLE);
-        let mut tex = rl.load_texture_from_image(&thread, &img).unwrap();
-        unsafe {
-            tex.update_texture(&std::mem::transmute::<[u32;65536], [u8;262144]>(buffer));
-        }
+        let tex = rl.load_texture_from_image(&thread, &img).unwrap();
         tex
     };
     while !rl.window_should_close() {
+        unsafe {
+            tile_data.update_texture(&std::mem::transmute::<[u32;24576], [u8;98304]>(ppu.debug_tiles()));
+            bg_map.update_texture(&std::mem::transmute::<[u32;65536], [u8;262144]>(ppu.calculate_tilemap(true)));
+            window.update_texture(&std::mem::transmute::<[u32;65536], [u8;262144]>(ppu.calculate_tilemap(false)));
+        }
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::WHITE);
+        d.draw_fps(10, 10);
 
+        const TILE_TL:(i32, i32) = (800, 12);
+        d.draw_rectangle(TILE_TL.0 - 5, TILE_TL.1 - 5, tile_data.width * 2 + 10, tile_data.height * 2 + 10, Color::RED);
         d.draw_texture_ex(&tile_data, math::Vector2::new(800., 12.), 0., 2., Color::WHITE);
-        d.draw_texture(&bg_map, 800, 12 + 284, Color::WHITE);
-        d.draw_texture(&window, 800+256, 12 + 284, Color::WHITE);
+
+        let bg_tl = (725, 28 + tile_data.height * 2);
+        let window_tl = (bg_tl.0 + 20 + bg_map.width, bg_tl.1);
+        tex_with_outline(&mut d, &bg_map, bg_tl);
+        tex_with_outline(&mut d, &window, window_tl);
     }
+}
+fn tex_with_outline(d: &mut RaylibDrawHandle, tex: &Texture2D, tl: (i32, i32)) {
+    d.draw_rectangle(tl.0-5, tl.1-5, tex.width + 10, tex.height + 10, Color::RED);
+    d.draw_texture(tex, tl.0, tl.1, Color::WHITE);
 }
