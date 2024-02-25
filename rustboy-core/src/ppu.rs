@@ -27,6 +27,10 @@ const WHITE: u32 = 0xff000000;
 const LIGHT_GREY: u32 = 0xff555555;
 const DARK_GREY: u32 = 0xffaaaaaa;
 const BLACK: u32 = 0xffffffff;
+const TILE_CNT: usize = 384;
+const TILES_END: u16 = 0x97FF;
+const SCREEN_LEN:u32 = 160;
+const SCREEN_WIDTH:u32 = 144;
 bitflags! {
     struct LCDC: u8 {
         const LCD_ENABLE = 1 << 7;
@@ -38,18 +42,6 @@ bitflags! {
         const OBJ_ENABLE = 1 << 1;
         const PRIORITY = 1 << 0;
     }
-}
-pub struct PPU {
-    dots: u32,
-    bus: Rc<RefCell<dyn Mem>>,
-    mode: Mode,
-}
-#[derive(PartialEq, Eq)]
-enum Mode {
-    Search,
-    Draw,
-    HBlank,
-    VBlank,
 }
 struct Buffer {
     pub length: u32,
@@ -93,12 +85,29 @@ impl Buffer {
         }
     }
 }
+#[derive(PartialEq, Eq, Debug)]
+enum Mode {
+    Search,
+    Draw,
+    HBlank,
+    VBlank,
+}
+pub struct PPU {
+    dots: u32,
+    bus: Rc<RefCell<dyn Mem>>,
+    mode: Mode,
+    buffer: Buffer,
+}
 impl PPU {
+    pub fn screen(&mut self) -> [u32; SCREEN_LEN as usize * SCREEN_WIDTH as usize] {
+        self.buffer.data.clone().try_into().expect("wrong size.")
+    }
     pub fn init(bus: Rc<RefCell<dyn Mem>>) -> PPU {
         PPU {
             dots: 0,
             bus,
             mode: Mode::Search,
+            buffer: Buffer::init(SCREEN_LEN, SCREEN_WIDTH),
         }
     }
     //advance the PPU by n CPU clocks, n*4 dots/t cycles
@@ -149,19 +158,26 @@ impl PPU {
                 if self.mode == Mode::Draw {
                     self.mode = Mode::HBlank;
                     //draw the line
-                    //let tl_x = bus.read(SCX_ADDR);
-                    //let tl_y = bus.read(SCY_ADDR);
+                    let bus = self.bus.borrow();
+                    let map_tl:(u32, u32) = (bus.read(SCY_ADDR).into(), bus.read(SCX_ADDR).into());
+                    //TODO: this is slow but you know it works for now
+                    let bg_map = self.calculate_tilemap(true);
+                    for i in 0..SCREEN_WIDTH {
+                        let map_x = (map_tl.1 + i) % MAP_PIXEL_LEN;
+                        let color = bg_map[((map_tl.0 + line) * MAP_PIXEL_LEN + map_x) as usize];
+                        self.buffer.set_pixel(line.try_into().unwrap(), i.try_into().unwrap(), color);
+                    }
                 }
             }
             _ => unreachable!(),
         }
     }
-    pub fn debug_tiles(&self) -> [u32; 8 * 8 * 384] {
+    pub fn debug_tiles(&self) -> [u32; TILE_WIDTH as usize * TILE_WIDTH as usize * TILE_CNT] {
         let mut out = Buffer::init(24 * 8, 16 * 8);
         let bus = self.bus.borrow();
         //$8000 - $97FF
-        let mut i:u16 = 0x8000;
-        while i <= 0x97FF {
+        let mut i:u16 = BLOCK_ZERO;
+        while i <= TILES_END {
             let mut merged:[u16; 8] = [0; 8];
             for k in 0..8 {
                 merged[k as usize] = spread(bus.read(i + 2*k)) | ((spread(bus.read(i + 2*k + 1)) << 1));
