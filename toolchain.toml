@@ -1,0 +1,5 @@
+# toolchain.toml
+[toolchain]
+channel = "stable"
+components = [ "rust-src" ]
+profile = "minimal"
