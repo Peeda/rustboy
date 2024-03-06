@@ -11,8 +11,8 @@ fn main() {
         .build();
 
     let mut mem = FlatMem::default();
-    //let ram = std::fs::read("ram.dmp").unwrap();
-    let ram = std::fs::read("pokemon.dmp").unwrap();
+    let ram = std::fs::read("ram.dmp").unwrap();
+    //let ram = std::fs::read("pokemon.dmp").unwrap();
     for b in ram.iter().enumerate() {
         mem.write(b.0.try_into().unwrap(), *b.1);
     }
@@ -42,7 +42,7 @@ fn main() {
         tex
     };
     while !rl.window_should_close() {
-        for _ in 0..10 {
+        for _ in 0..100 {
             ppu.tick(4);
         }
         unsafe {
@@ -60,8 +60,7 @@ fn main() {
         d.draw_rectangle(TILE_TL.0 - 5, TILE_TL.1 - 5, tile_data.width * 2 + 10, tile_data.height * 2 + 10, Color::RED);
         d.draw_texture_ex(&tile_data, math::Vector2::new(800., 12.), 0., 2., Color::WHITE);
 
-        println!("{} {}", gb_screen.height, gb_screen.width);
-        d.draw_rectangle(96 - 5, 60 - 5, gb_screen.height * 2 + 10, gb_screen.width * 2 + 10, Color::RED);
+        d.draw_rectangle(96 - 5, 60 - 5, gb_screen.width * 2 + 10, gb_screen.height * 2 + 10, Color::RED);
         d.draw_texture_ex(&gb_screen, math::Vector2::new(96., 60.), 0., 2., Color::WHITE);
 
         let bg_tl = (725, 28 + tile_data.height * 2);

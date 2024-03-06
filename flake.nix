@@ -22,6 +22,10 @@
         toolchain
         pkgs.raylib
       ];
+      shellHook =
+        ''
+          export RUST_BACKTRACE="1"
+        '';
     };
   };
 }

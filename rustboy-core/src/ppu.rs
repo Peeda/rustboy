@@ -23,14 +23,15 @@ const BLOCK_ZERO: u16 = 0x8000;
 const BLOCK_ONE: u16 = 0x8800;
 const BLOCK_TWO: u16 = 0x9000;
 const PALETTE_ADDR:u16 = 0xFF47;
+
 const WHITE: u32 = 0xff000000;
 const LIGHT_GREY: u32 = 0xff555555;
 const DARK_GREY: u32 = 0xffaaaaaa;
 const BLACK: u32 = 0xffffffff;
 const TILE_CNT: usize = 384;
 const TILES_END: u16 = 0x97FF;
-const SCREEN_LEN:u32 = 160;
-const SCREEN_WIDTH:u32 = 144;
+const SCREEN_HEIGHT:u32 = 144;
+const SCREEN_WIDTH:u32 = 160;
 bitflags! {
     struct LCDC: u8 {
         const LCD_ENABLE = 1 << 7;
@@ -44,22 +45,23 @@ bitflags! {
     }
 }
 struct Buffer {
-    pub length: u32,
+    pub height: u32,
     pub width: u32,
     pub data: Vec<u32>,
 }
 impl Buffer {
-    pub fn init(length:u32, width:u32) -> Buffer {
+    pub fn init(height:u32, width:u32) -> Buffer {
         let mut temp = Vec::new();
-        temp.resize(length as usize * width as usize, 0);
+        temp.resize(height as usize * width as usize, 0);
         Buffer {
-            length,
+            height,
             width,
             data: temp,
         }
     }
     fn set_pixel(&mut self, y: u8, x: u8, val: u32) {
-        self.data[(y as u32 * self.length + x as u32) as usize] = val;
+        debug_assert!( (y as u32) < self.height && (x as u32) < self.width);
+        self.data[(y as u32 * self.width + x as u32) as usize] = val;
     }
     fn write_tile(&mut self, y: u8, x: u8, palette:u8, tile: &[u16; 8]) {
         //write to the corresponding values in the buffer
@@ -99,7 +101,7 @@ pub struct PPU {
     buffer: Buffer,
 }
 impl PPU {
-    pub fn screen(&mut self) -> [u32; SCREEN_LEN as usize * SCREEN_WIDTH as usize] {
+    pub fn screen(&mut self) -> [u32; SCREEN_HEIGHT as usize * SCREEN_WIDTH as usize] {
         self.buffer.data.clone().try_into().expect("wrong size.")
     }
     pub fn init(bus: Rc<RefCell<dyn Mem>>) -> PPU {
@@ -107,7 +109,7 @@ impl PPU {
             dots: 0,
             bus,
             mode: Mode::Search,
-            buffer: Buffer::init(SCREEN_LEN, SCREEN_WIDTH),
+            buffer: Buffer::init(SCREEN_HEIGHT, SCREEN_WIDTH),
         }
     }
     //advance the PPU by n CPU clocks, n*4 dots/t cycles
@@ -173,7 +175,7 @@ impl PPU {
         }
     }
     pub fn debug_tiles(&self) -> [u32; TILE_WIDTH as usize * TILE_WIDTH as usize * TILE_CNT] {
-        let mut out = Buffer::init(24 * 8, 16 * 8);
+        let mut out = Buffer::init(16 * 8, 24 * 8);
         let bus = self.bus.borrow();
         //$8000 - $97FF
         let mut i:u16 = BLOCK_ZERO;
@@ -182,8 +184,8 @@ impl PPU {
             for k in 0..8 {
                 merged[k as usize] = spread(bus.read(i + 2*k)) | ((spread(bus.read(i + 2*k + 1)) << 1));
             }
-            let iterations:u16 = (i - 0x8000) / 16;
-            out.write_tile((iterations/24) as u8, (iterations % 24) as u8, 0b00011011, &merged);
+            let iterations:u16 = (i - BLOCK_ZERO) / 16;
+            out.write_tile((iterations / 24) as u8, (iterations % 24) as u8, 0b00011011, &merged);
             i += 16;
         }
         out.data.try_into().expect("wrong size.")
