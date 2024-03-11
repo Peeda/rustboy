@@ -52,10 +52,9 @@ fn main() {
             window.update_texture(&std::mem::transmute::<[u32;65536], [u8;262144]>(ppu.calculate_tilemap(false)));
         }
         let mut d = rl.begin_drawing(&thread);
-        d.clear_background(Color::WHITE);
+        d.clear_background(Color::BLACK);
         d.draw_fps(10, 10);
 
-        d.draw_text("EEEE", 10, 500, 12, Color::BLACK);
         const TILE_TL:(i32, i32) = (800, 12);
         d.draw_rectangle(TILE_TL.0 - 5, TILE_TL.1 - 5, tile_data.width * 2 + 10, tile_data.height * 2 + 10, Color::RED);
         d.draw_texture_ex(&tile_data, math::Vector2::new(800., 12.), 0., 2., Color::WHITE);

@@ -1,37 +1,19 @@
-use bitflags::bitflags;
+use bitflags::{bitflags, Flags};
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::mem::Mem;
-const LINE_LEN: u32 = 456;
-const FRAME_LEN: u32 = 70224;
-const OAM_END: u32 = 79;
-const DRAW_BEGIN: u32 = 80;
-const DRAW_END: u32 = 251;
-const HBLANK_BEGIN: u32 = 252;
-const HBLANK_END: u32 = 455;
-const SCY_ADDR: u16 = 0xFF42;
-const SCX_ADDR: u16 = 0xFF43;
 const LCDC_ADDR: u16 = 0xFF40;
 
 const MAP_PIXEL_LEN: u32 = 256;
 const MAP_PIXEL_SIZE: u32 = 256 * 256;
-const MAP_WIDTH: u16 = 32;
 const TILE_WIDTH:u16 = 8;
-const TILE_BYTES:u16 = 16;
+const TILE_CNT: usize = 384;
+
 const BLOCK_ZERO: u16 = 0x8000;
 const BLOCK_ONE: u16 = 0x8800;
 const BLOCK_TWO: u16 = 0x9000;
-const PALETTE_ADDR:u16 = 0xFF47;
 
-const WHITE: u32 = 0xff000000;
-const LIGHT_GREY: u32 = 0xff555555;
-const DARK_GREY: u32 = 0xffaaaaaa;
-const BLACK: u32 = 0xffffffff;
-const TILE_CNT: usize = 384;
-const TILES_END: u16 = 0x97FF;
-const SCREEN_HEIGHT:u32 = 144;
-const SCREEN_WIDTH:u32 = 160;
 bitflags! {
     struct LCDC: u8 {
         const LCD_ENABLE = 1 << 7;
@@ -64,6 +46,10 @@ impl Buffer {
         self.data[(y as u32 * self.width + x as u32) as usize] = val;
     }
     fn write_tile(&mut self, y: u8, x: u8, palette:u8, tile: &[u16; 8]) {
+        const WHITE: u32 = 0xff000000;
+        const LIGHT_GREY: u32 = 0xff555555;
+        const DARK_GREY: u32 = 0xffaaaaaa;
+        const BLACK: u32 = 0xffffffff;
         //write to the corresponding values in the buffer
         for y0 in 0..TILE_WIDTH {
             for x0 in 0..TILE_WIDTH {
@@ -94,6 +80,8 @@ enum Mode {
     HBlank,
     VBlank,
 }
+const SCREEN_HEIGHT:u32 = 144;
+const SCREEN_WIDTH:u32 = 160;
 pub struct PPU {
     dots: u32,
     bus: Rc<RefCell<dyn Mem>>,
@@ -114,6 +102,13 @@ impl PPU {
     }
     //advance the PPU by n CPU clocks, n*4 dots/t cycles
     pub fn tick(&mut self, clocks: u8) {
+        const LINE_LEN: u32 = 456;
+        const FRAME_LEN: u32 = 70224;
+        const OAM_END: u32 = 79;
+        const DRAW_BEGIN: u32 = 80;
+        const DRAW_END: u32 = 251;
+        const HBLANK_BEGIN: u32 = 252;
+        const HBLANK_END: u32 = 455;
         self.dots += clocks as u32;
         self.dots %= FRAME_LEN;
         let line = self.dots / LINE_LEN;
@@ -158,16 +153,25 @@ impl PPU {
             HBLANK_BEGIN..=HBLANK_END => {
                 debug_assert!(self.mode != Mode::Search);
                 if self.mode == Mode::Draw {
+                    const SCY_ADDR: u16 = 0xFF42;
+                    const SCX_ADDR: u16 = 0xFF43;
                     self.mode = Mode::HBlank;
                     //draw the line
                     let bus = self.bus.borrow();
                     let map_tl:(u32, u32) = (bus.read(SCY_ADDR).into(), bus.read(SCX_ADDR).into());
                     //TODO: this is slow but you know it works for now
-                    let bg_map = self.calculate_tilemap(true);
-                    for i in 0..SCREEN_WIDTH {
-                        let map_x = (map_tl.1 + i) % MAP_PIXEL_LEN;
-                        let color = bg_map[((map_tl.0 + line) * MAP_PIXEL_LEN + map_x) as usize];
-                        self.buffer.set_pixel(line.try_into().unwrap(), i.try_into().unwrap(), color);
+                    let lcdc = LCDC::from_bits(bus.read(LCDC_ADDR)).unwrap();
+                    //on gb, this bit must be on to draw bg and window
+                    if lcdc.contains(LCDC::PRIORITY) {
+                        let bg_map = self.calculate_tilemap(true);
+                        for i in 0..SCREEN_WIDTH {
+                            let map_x = (map_tl.1 + i) % MAP_PIXEL_LEN;
+                            let color = bg_map[((map_tl.0 + line) * MAP_PIXEL_LEN + map_x) as usize];
+                            self.buffer.set_pixel(line.try_into().unwrap(), i.try_into().unwrap(), color);
+                        }
+                        if lcdc.contains(LCDC::WINDOW) {
+
+                        }
                     }
                 }
             }
@@ -179,6 +183,7 @@ impl PPU {
         let bus = self.bus.borrow();
         //$8000 - $97FF
         let mut i:u16 = BLOCK_ZERO;
+        const TILES_END: u16 = 0x97FF;
         while i <= TILES_END {
             let mut merged:[u16; 8] = [0; 8];
             for k in 0..8 {
@@ -191,6 +196,7 @@ impl PPU {
         out.data.try_into().expect("wrong size.")
     }
     pub fn calculate_tilemap(&self, background: bool) -> [u32; MAP_PIXEL_SIZE as usize] {
+        const PALETTE_ADDR:u16 = 0xFF47;
         let mut buffer = Buffer::init(MAP_PIXEL_LEN, MAP_PIXEL_LEN);
         let bus = self.bus.borrow();
         //I'm just gonna calculate the whole tile map for now
@@ -205,10 +211,12 @@ impl PPU {
         } else {
             0x9800
         };
+        const MAP_WIDTH: u16 = 32;
         for y in 0..MAP_WIDTH {
             for x in 0..MAP_WIDTH {
                 let tile_ind = bus.read(map_addr + y * MAP_WIDTH + x);
                 //account for addressing mode, get start of 16 byte tile
+                const TILE_BYTES:u16 = 16;
                 let tile_loc = match tile_ind {
                     0..=127 => {
                         if lcdc.contains(LCDC::TILE_ADDR_MODE) {
