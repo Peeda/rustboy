@@ -1,4 +1,4 @@
-use bitflags::{bitflags, Flags};
+use bitflags::bitflags;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -153,29 +153,50 @@ impl PPU {
             HBLANK_BEGIN..=HBLANK_END => {
                 debug_assert!(self.mode != Mode::Search);
                 if self.mode == Mode::Draw {
-                    const SCY_ADDR: u16 = 0xFF42;
-                    const SCX_ADDR: u16 = 0xFF43;
-                    self.mode = Mode::HBlank;
-                    //draw the line
-                    let bus = self.bus.borrow();
-                    let map_tl:(u32, u32) = (bus.read(SCY_ADDR).into(), bus.read(SCX_ADDR).into());
-                    //TODO: this is slow but you know it works for now
-                    let lcdc = LCDC::from_bits(bus.read(LCDC_ADDR)).unwrap();
-                    //on gb, this bit must be on to draw bg and window
-                    if lcdc.contains(LCDC::PRIORITY) {
-                        let bg_map = self.calculate_tilemap(true);
-                        for i in 0..SCREEN_WIDTH {
-                            let map_x = (map_tl.1 + i) % MAP_PIXEL_LEN;
-                            let color = bg_map[((map_tl.0 + line) * MAP_PIXEL_LEN + map_x) as usize];
-                            self.buffer.set_pixel(line.try_into().unwrap(), i.try_into().unwrap(), color);
-                        }
-                        if lcdc.contains(LCDC::WINDOW) {
-
-                        }
-                    }
+                    self.draw_line(line);
                 }
             }
             _ => unreachable!(),
+        }
+    }
+    fn draw_line(&mut self, line: u32) {
+        const SCY_ADDR: u16 = 0xFF42;
+        const SCX_ADDR: u16 = 0xFF43;
+        const WY_ADDR:u16 = 0xFF4A;
+        const WX_ADDR:u16 = 0xFF4B;
+        self.mode = Mode::HBlank;
+        //draw the line
+        let bus = self.bus.borrow();
+        let map_tl:(u32, u32) = (bus.read(SCY_ADDR).into(), bus.read(SCX_ADDR).into());
+        //TODO: this is slow but you know it works for now
+        //I'm recalculating both tile maps on every scan line
+        let lcdc = LCDC::from_bits(bus.read(LCDC_ADDR)).unwrap();
+        //on gb, this bit must be on to draw bg and window
+        if lcdc.contains(LCDC::PRIORITY) {
+            let bg_map = self.calculate_tilemap(true);
+            for i in 0..SCREEN_WIDTH {
+                let map_x = (map_tl.1 + i) % MAP_PIXEL_LEN;
+                let color = bg_map[((map_tl.0 + line) * MAP_PIXEL_LEN + map_x) as usize];
+                self.buffer.set_pixel(line.try_into().unwrap(), i.try_into().unwrap(), color);
+            }
+            if lcdc.contains(LCDC::WINDOW) {
+                let window_map = self.calculate_tilemap(false);
+                let line:u16 = line.try_into().unwrap();
+                let window_y = bus.read(WY_ADDR) as u16;
+                let window_x = bus.read(WX_ADDR) as u16;
+                if line >= window_y as u16 {
+                    let mut window_start = window_x as i32 - 7;
+                    if window_start < 0 {
+                        window_start = 0;
+                    }
+                    for i in window_start..SCREEN_WIDTH as i32 {
+                        let wind_line = (line - window_y) as usize;
+                        let len = MAP_PIXEL_LEN as usize;
+                        let color = window_map[wind_line * len + i as usize - window_start as usize];
+                        self.buffer.set_pixel(line.try_into().unwrap(), i.try_into().unwrap(), color);
+                    }
+                }
+            }
         }
     }
     pub fn debug_tiles(&self) -> [u32; TILE_WIDTH as usize * TILE_WIDTH as usize * TILE_CNT] {
